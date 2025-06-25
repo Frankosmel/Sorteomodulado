@@ -1,15 +1,17 @@
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from storage import load, save
-from config import ADMINS
-from datetime import datetime
+from storage import load
+
 
 def register_owner_handlers(bot: TeleBot):
     @bot.message_handler(commands=['misgrupos'])
     def mis_grupos(msg):
+        if msg.chat.type != 'private':
+            return
         uid = msg.from_user.id
         gr = load('grupos')
-        own = {gid:info for gid,info in gr.items() if info['activado_por']==uid}
+        # Filtrar grupos donde este usuario sea activador
+        own = {gid: info for gid, info in gr.items() if info['activado_por'] == uid}
         if not own:
             bot.reply_to(msg, "ℹ️ No tienes grupos activos.")
             return
@@ -21,39 +23,42 @@ def register_owner_handlers(bot: TeleBot):
 
         bot.send_message(uid, "📂 Tus Grupos Activos:", reply_markup=kb)
 
-    @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
+    @bot.message_handler(func=lambda m: m.chat.type == 'private')
     def handle_owner_selection(msg):
-        text = msg.text
         uid = msg.from_user.id
         gr = load('grupos')
+        text = msg.text
 
         # Salir
         if text == "🔙 Salir":
             bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
             return
 
-        # Seleccionó gestionar un grupo
+        # Selección de grupo
         if text.startswith("Gestionar "):
             gid = text.split()[1]
-            if gid not in gr or gr[gid]['activado_por'] != uid:
-                bot.reply_to(msg, "⚠️ No eres dueño de ese grupo.")
+            info = gr.get(gid)
+            if not info or info['activado_por'] != uid:
+                bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
                 return
 
-            # Monta menú específico para este grupo
+            # Menú para el grupo seleccionado
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("👥 Ver participantes"))
             kb.add(KeyboardButton("🏆 Ver top invitadores"))
             kb.add(KeyboardButton("🔄 Reiniciar sorteo"))
             kb.add(KeyboardButton("🔙 Volver"))
-            # Guarda contexto temporalmente
-            bot.current_group = gid
+
+            # Guardar contexto temporal
+            bot.user_data = getattr(bot, 'user_data', {})
+            bot.user_data[uid] = gid
+
             bot.send_message(uid, f"⚙️ Gestionando Grupo {gid}:", reply_markup=kb)
             return
 
-        # Acciones dentro de un grupo seleccionado
-        gid = getattr(bot, 'current_group', None)
+        # Otras acciones: requiere grupo en contexto
+        gid = bot.user_data.get(uid)
         if not gid:
-            bot.reply_to(msg, "⚠️ Primero selecciona un grupo con /misgrupos.")
             return
 
         if text == "👥 Ver participantes":
@@ -70,7 +75,7 @@ def register_owner_handlers(bot: TeleBot):
             inv = load('invitaciones').get(gid, {})
             texto = f"🏆 *Top Invitadores Grupo {gid}:*\n\n"
             top = sorted(inv.items(), key=lambda x: x[1], reverse=True)
-            for i,(uid2,count) in enumerate(top[:10], start=1):
+            for i, (uid2, count) in enumerate(top[:10], start=1):
                 texto += f"{i}. ID {uid2} — {count} invitado(s)\n"
             bot.send_message(uid, texto, parse_mode='Markdown')
 
