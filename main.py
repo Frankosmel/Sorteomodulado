@@ -1,5 +1,7 @@
 import os
+from datetime import datetime
 from telebot import TeleBot
+
 from config import TOKEN
 from storage import ensure_files
 from group_handlers import register_group_handlers
@@ -9,7 +11,6 @@ from owner_handlers import register_owner_handlers
 from draw_handlers import register_draw_handlers
 from scheduler import load_jobs, schedule_raffle
 from reminder_handlers import start_reminders, register_subscription_handlers
-from datetime import datetime
 
 # — Inicialización —
 ensure_files()
@@ -27,7 +28,10 @@ register_subscription_handlers(bot)
 # — Handler para programar sorteos —
 @bot.message_handler(commands=['agendar_sorteo'])
 def agendar_sorteo(msg):
-    # Formato: /agendar_sorteo 2025-07-01_15:30
+    """
+    Formato: /agendar_sorteo YYYY-MM-DD_HH:MM
+    Programa un sorteo automático para la fecha/hora indicada.
+    """
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
         bot.reply_to(msg, "❌ Formato inválido. Usa: /agendar_sorteo YYYY-MM-DD_HH:MM")
@@ -43,10 +47,14 @@ def agendar_sorteo(msg):
 load_jobs(bot)
 start_reminders(bot)
 
-# — Comandos básicos —
+# — Comandos de inicio —
 @bot.message_handler(commands=['start'])
 def start(msg):
-    bot.reply_to(msg, "👋 ¡Hola! Usa /addsorteo en el grupo, /admin o /misgrupos en privado.")
+    bot.reply_to(
+        msg,
+        "👋 ¡Hola! En el grupo usa /addsorteo, /top, /lista o /agendar_sorteo.\n"
+        "En privado: /admin, /misgrupos, /misuscripciones."
+    )
 
 # — Asegurar polling limpio —
 bot.remove_webhook()
