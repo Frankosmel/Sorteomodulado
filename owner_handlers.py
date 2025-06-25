@@ -1,7 +1,6 @@
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from storage import load
-
+from storage import load, save
 
 def register_owner_handlers(bot: TeleBot):
     @bot.message_handler(commands=['misgrupos'])
@@ -10,7 +9,6 @@ def register_owner_handlers(bot: TeleBot):
             return
         uid = msg.from_user.id
         gr = load('grupos')
-        # Filtrar grupos donde este usuario sea activador
         own = {gid: info for gid, info in gr.items() if info['activado_por'] == uid}
         if not own:
             bot.reply_to(msg, "ℹ️ No tienes grupos activos.")
@@ -34,7 +32,7 @@ def register_owner_handlers(bot: TeleBot):
             bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
             return
 
-        # Selección de grupo
+        # Seleccionó gestionar un grupo
         if text.startswith("Gestionar "):
             gid = text.split()[1]
             info = gr.get(gid)
@@ -47,17 +45,18 @@ def register_owner_handlers(bot: TeleBot):
             kb.add(KeyboardButton("👥 Ver participantes"))
             kb.add(KeyboardButton("🏆 Ver top invitadores"))
             kb.add(KeyboardButton("🔄 Reiniciar sorteo"))
+            kb.add(KeyboardButton("🗑️ Borrar lista de sorteo"))
             kb.add(KeyboardButton("🔙 Volver"))
 
-            # Guardar contexto temporal
+            # Guardar contexto
             bot.user_data = getattr(bot, 'user_data', {})
             bot.user_data[uid] = gid
 
             bot.send_message(uid, f"⚙️ Gestionando Grupo {gid}:", reply_markup=kb)
             return
 
-        # Otras acciones: requiere grupo en contexto
-        gid = bot.user_data.get(uid)
+        # Acciones de gestión, requiere contexto
+        gid = getattr(bot, 'user_data', {}).get(uid)
         if not gid:
             return
 
@@ -87,6 +86,15 @@ def register_owner_handlers(bot: TeleBot):
                 bot.send_message(uid, f"🔁 Sorteo en Grupo {gid} reiniciado.")
             else:
                 bot.send_message(uid, "ℹ️ No hay sorteo activo para reiniciar.")
+
+        elif text == "🗑️ Borrar lista de sorteo":
+            sorteos = load('sorteo')
+            if gid in sorteos:
+                del sorteos[gid]
+                save('sorteo', sorteos)
+                bot.send_message(uid, f"🗑️ Lista de sorteo de Grupo {gid} borrada.")
+            else:
+                bot.send_message(uid, "ℹ️ No hay lista de sorteo para borrar.")
 
         elif text == "🔙 Volver":
             bot.send_message(uid, "🔙 Regresa al menú con /misgrupos", reply_markup=ReplyKeyboardRemove())
