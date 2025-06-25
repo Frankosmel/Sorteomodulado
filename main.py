@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from telebot import TeleBot
+from dateutil.parser import parse
 
 from config import TOKEN
 from storage import ensure_files
@@ -25,35 +26,46 @@ register_owner_handlers(bot)
 register_draw_handlers(bot)
 register_subscription_handlers(bot)
 
-# — Handler para programar sorteos —
+# — Handler para programar sorteos (flexible) —
 @bot.message_handler(commands=['agendar_sorteo'])
 def agendar_sorteo(msg):
     """
-    Formato: /agendar_sorteo YYYY-MM-DD_HH:MM
-    Programa un sorteo automático para la fecha/hora indicada.
+    /agendar_sorteo <fecha>
+    Formatos flexibles:
+      • YYYY-MM-DD HH:MM[:SS]
+      • YYYY-MM-DDTHH:MM[:SS]
+      • 'tomorrow 15:00', 'in 2h', etc.
     """
     parts = msg.text.split(maxsplit=1)
     if len(parts) < 2:
-        bot.reply_to(msg, "❌ Formato inválido. Usa: /agendar_sorteo YYYY-MM-DD_HH:MM")
-        return
+        return bot.reply_to(msg,
+            "❌ Debes indicar fecha/hora.\n"
+            "Ejemplo: /agendar_sorteo 2025-06-26 08:22\n"
+            "o /agendar_sorteo tomorrow 15:00\n"
+        )
     try:
-        run_at = datetime.fromisoformat(parts[1].replace('_', 'T'))
-        schedule_raffle(bot, str(msg.chat.id), run_at)
-        bot.reply_to(msg, f"✅ Sorteo agendado para {run_at}")
+        dt = parse(parts[1], dayfirst=False)
+        schedule_raffle(bot, str(msg.chat.id), dt)
+        bot.reply_to(msg,
+            f"✅ Sorteo programado para {dt.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
     except Exception:
-        bot.reply_to(msg, "❌ Fecha/hora inválida. Usa: /agendar_sorteo YYYY-MM-DD_HH:MM")
+        bot.reply_to(msg,
+            "❌ No pude entender esa fecha/hora.\n"
+            "Usa ISO (2025-06-26 08:22) o expresiones como 'tomorrow 15:00'."
+        )
 
 # — Arrancar jobs programados y recordatorios —
 load_jobs(bot)
 start_reminders(bot)
 
-# — Comandos de inicio —
+# — Comando /start —
 @bot.message_handler(commands=['start'])
 def start(msg):
     bot.reply_to(
         msg,
         "👋 ¡Hola! En el grupo usa /addsorteo, /top, /lista o /agendar_sorteo.\n"
-        "En privado: /admin, /misgrupos, /misuscripciones."
+        "En privado: /admin, /misgrupos, /misuscripciones, /sortear."
     )
 
 # — Asegurar polling limpio —
