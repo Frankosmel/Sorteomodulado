@@ -26,12 +26,12 @@ register_owner_handlers(bot)
 register_draw_handlers(bot)
 register_subscription_handlers(bot)
 
-# — Handler para programar sorteos (flexible) —
+# — Handler para programar sorteos (formatos flexibles) —
 @bot.message_handler(commands=['agendar_sorteo'])
 def agendar_sorteo(msg):
     """
     /agendar_sorteo <fecha>
-    Formatos flexibles:
+    Acepta:
       • YYYY-MM-DD HH:MM[:SS]
       • YYYY-MM-DDTHH:MM[:SS]
       • 'tomorrow 15:00', 'in 2h', etc.
@@ -41,7 +41,7 @@ def agendar_sorteo(msg):
         return bot.reply_to(msg,
             "❌ Debes indicar fecha/hora.\n"
             "Ejemplo: /agendar_sorteo 2025-06-26 08:22\n"
-            "o /agendar_sorteo tomorrow 15:00\n"
+            "o /agendar_sorteo tomorrow 15:00"
         )
     try:
         dt = parse(parts[1], dayfirst=False)
@@ -55,7 +55,7 @@ def agendar_sorteo(msg):
             "Usa ISO (2025-06-26 08:22) o expresiones como 'tomorrow 15:00'."
         )
 
-# — Arrancar jobs programados y recordatorios —
+# — Cargar jobs programados y arrancar recordatorios —
 load_jobs(bot)
 start_reminders(bot)
 
@@ -64,8 +64,10 @@ start_reminders(bot)
 def start(msg):
     bot.reply_to(
         msg,
-        "👋 ¡Hola! En el grupo usa /addsorteo, /top, /lista o /agendar_sorteo.\n"
-        "En privado: /admin, /misgrupos, /misuscripciones, /sortear."
+        "👋 ¡Hola! En el grupo usa:\n"
+        "  /addsorteo, /top, /lista, /agendar_sorteo\n"
+        "En privado usa:\n"
+        "  /admin, /misgrupos, /misuscripciones, /sortear"
     )
 
 # — Asegurar polling limpio —
