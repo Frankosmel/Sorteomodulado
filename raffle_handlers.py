@@ -1,0 +1,71 @@
+from telebot import TeleBot
+from storage import load, save
+from config import FILES
+
+def register_referral_handlers(bot: TeleBot):
+    @bot.message_handler(content_types=['new_chat_members'])
+    def handle_referrals(msg):
+        chat_id = str(msg.chat.id)
+        participantes = load('participantes')
+        invitaciones = load('invitaciones')
+        participantes.setdefault(chat_id, {})
+        invitaciones.setdefault(chat_id, {})
+
+        for new_user in msg.new_chat_members:
+            uid = str(new_user.id)
+            adder = msg.from_user
+            # Si aún no existe, lo registramos
+            if uid not in participantes[chat_id]:
+                participantes[chat_id][uid] = {
+                    "nombre": new_user.first_name,
+                    "username": new_user.username
+                }
+                inv_id = str(adder.id)
+                invitaciones[chat_id][inv_id] = invitaciones[chat_id].get(inv_id, 0) + 1
+
+        save('participantes', participantes)
+        save('invitaciones', invitaciones)
+
+def register_raffle_handlers(bot: TeleBot):
+    @bot.message_handler(commands=['addsorteo'])
+    def addsorteo(msg):
+        chat_id = str(msg.chat.id)
+        user = msg.from_user
+        user_id = str(user.id)
+
+        sorteos = load('sorteo')
+        sorteos.setdefault(chat_id, {})
+
+        if user_id in sorteos[chat_id]:
+            bot.reply_to(msg, "🎉 Ya estás participando en el sorteo.")
+            return
+
+        sorteos[chat_id][user_id] = {
+            "nombre": user.first_name,
+            "username": user.username
+        }
+        save('sorteo', sorteos)
+
+        bot.reply_to(
+            msg,
+            f"✅ ¡{user.first_name}, quedas anotado en el sorteo!\n🎁 ¡Mucha suerte! 🍀"
+        )
+
+    @bot.message_handler(commands=['sorteo_lista'])
+    def lista_sorteo(msg):
+        chat_id = str(msg.chat.id)
+        sorteos = load('sorteo').get(chat_id, {})
+
+        if not sorteos:
+            bot.reply_to(msg, "📭 Aún no hay participantes registrados.")
+            return
+
+        texto = "🎁 *Participantes del Sorteo:*\n\n"
+        for uid, info in sorteos.items():
+            username = info.get("username")
+            nombre = info["nombre"]
+            if username:
+                texto += f"• @{username} — {nombre}\n"
+            else:
+                texto += f"• {nombre} — ID: {uid}\n"
+        bot.reply_to(msg, texto, parse_mode='Markdown')
