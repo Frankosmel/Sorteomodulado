@@ -3,9 +3,9 @@ from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, Keybo
 def register_admin_handlers(bot: TeleBot): @bot.message_handler(commands=['admin']) def admin_panel(msg): if msg.chat.type != 'private' or msg.from_user.id not in ADMINS: return bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
 
 kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario"))
-    kb.add(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
-    kb.add(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
+    kb.row(KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario"))
+    kb.row(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
+    kb.row(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
 
     bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
 
@@ -20,19 +20,19 @@ def handle_admin(msg):
             return bot.send_message(uid, "ℹ️ No hay usuarios autorizados aún.")
         resp = "👥 *Usuarios Autorizados:*
 
-" for k, info in autorizados.items(): exp_date = datetime.fromisoformat(info['vence']).date() resp += f"• ID {k} — vence {exp_date}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+\n" for k, info in autorizados.items(): exp_date = datetime.fromisoformat(info['vence']).date() resp += f"• ID {k} — vence {exp_date}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "➕ Autorizar usuario":
         return bot.send_message(
             uid,
-            "✏️ Usa el comando:\n`/autorizar <user_id>`",
+            "✏️ Para autorizar, usa el comando en este formato:\n`/autorizar <user_id>`",
             parse_mode='Markdown'
         )
 
     if text == "➖ Desautorizar usuario":
         return bot.send_message(
             uid,
-            "✏️ Usa el comando:\n`/desautorizar <user_id>`",
+            "✏️ Para desautorizar, usa:\n`/desautorizar <user_id>`",
             parse_mode='Markdown'
         )
 
@@ -40,7 +40,7 @@ if text == "➕ Autorizar usuario":
         autorizados = list_authorized()
         resp = "⏳ *Vencimientos próximos:*
 
-" now = datetime.utcnow() for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']) dias = (exp - now).days resp += f"• ID {k} — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+\n" now = datetime.utcnow() for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']) dias = (exp - now).days resp += f"• ID {k} — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "🗂 Ver grupos":
         grupos = load('grupos')
@@ -48,7 +48,7 @@ if text == "🗂 Ver grupos":
             return bot.send_message(uid, "ℹ️ No hay grupos registrados.")
         resp = "🗂 *Grupos Activos:*
 
-" for k, info in grupos.items(): resp += f"• Grupo {k} — activado por {info['activado_por']} el {info['creado']}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+\n" for k, info in grupos.items(): resp += f"• Grupo {k} — activado por {info['activado_por']} el {info['creado']}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "🔙 Salir":
         return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
@@ -59,7 +59,7 @@ def cmd_autorizar(message):
         return bot.reply_to(message, "⛔ No tienes permiso.")
     parts = message.text.strip().split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return bot.reply_to(message, "❌ Uso: `/autorizar <user_id>`", parse_mode='Markdown')
+        return bot.reply_to(message, "❌ Uso: /autorizar <user_id>", parse_mode='Markdown')
     new_id = int(parts[1])
     add_authorized(new_id, message.from_user.id)
     exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date()
@@ -75,7 +75,7 @@ def cmd_desautorizar(message):
         return bot.reply_to(message, "⛔ No tienes permiso.")
     parts = message.text.strip().split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return bot.reply_to(message, "❌ Uso: `/desautorizar <user_id>`", parse_mode='Markdown')
+        return bot.reply_to(message, "❌ Uso: /desautorizar <user_id>", parse_mode='Markdown')
     rem_id = int(parts[1])
     success = remove_authorized(rem_id)
     if success:
