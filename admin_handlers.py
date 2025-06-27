@@ -7,10 +7,10 @@ kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
     kb.row(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
 
-    text = (
+            text = (
         "👑 *Panel de Administración*
 
-" "Elige una opción con los botones:" ) bot.send_message( msg.chat.id, text, parse_mode='Markdown', reply_markup=kb )
+" "Elige una opción con los botones:" ) bot.send_message( msg.chat.id, text, parse_mode='Markdown', reply_markup=kb ) )
 
 @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
 def handle_admin(msg):
