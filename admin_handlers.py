@@ -78,7 +78,7 @@ def cmd_autorizar(message):
         return bot.reply_to(message, "❌ Uso: /autorizar <user_id>", parse_mode='Markdown')
     new_id = int(parts[1])
     add_authorized(new_id, message.from_user.id)
-    exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date()
+    exp_date = (datetime.utcnow() + timedelta(days=30)).date()
     return bot.reply_to(
         message,
         f"✅ Usuario `{new_id}` autorizado hasta {exp_date}",
