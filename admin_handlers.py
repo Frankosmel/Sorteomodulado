@@ -1,82 +1,88 @@
-from telebot import TeleBot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from config import ADMINS
-from storage import load, save
-from auth import add_authorized
-from datetime import datetime
+from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove from config import ADMINS from auth import add_authorized, remove_authorized, list_authorized, is_valid, register_group from datetime import datetime
 
-def register_admin_handlers(bot: TeleBot):
-    @bot.message_handler(commands=['admin'])
-    def admin_panel(msg):
-        if msg.chat.type != 'private' or msg.from_user.id not in ADMINS:
-            bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
-            return
+def register_admin_handlers(bot: TeleBot): @bot.message_handler(commands=['admin']) def admin_panel(msg): if msg.chat.type != 'private' or msg.from_user.id not in ADMINS: return bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
 
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add(KeyboardButton("👥 Ver autorizados"),
-               KeyboardButton("➕ Agregar autorizado"))
-        kb.add(KeyboardButton("⏳ Ver vencimientos"),
-               KeyboardButton("🗂 Ver grupos"))
-        kb.add(KeyboardButton("📤 Mensaje a grupos"),
-               KeyboardButton("🔙 Salir"))
+kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.add(KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario"))
+    kb.add(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
+    kb.add(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
 
-        bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
+    bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
 
-    @bot.message_handler(func=lambda m: m.chat.type == 'private' and m.from_user.id in ADMINS)
-    def handle_admin(msg):
-        text = msg.text
-        uid = msg.from_user.id
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and m.from_user.id in ADMINS)
+def handle_admin(msg):
+    text = msg.text
+    uid = msg.from_user.id
 
-        if text == "👥 Ver autorizados":
-            auth = load('autorizados')
-            resp = "📋 *Usuarios Autorizados:*\n\n"
-            for k,v in auth.items():
-                resp += f"- {v['nombre']} (ID {k}) vence {v['vence']}\n"
-            bot.send_message(uid, resp, parse_mode='Markdown')
+    if text == "📋 Listar autorizados":
+        autorizados = list_authorized()
+        if not autorizados:
+            return bot.send_message(uid, "ℹ️ No hay usuarios autorizados aún.")
+        resp = "👥 *Usuarios Autorizados:*
 
-        elif text == "➕ Agregar autorizado":
-            msg2 = bot.send_message(uid, "✏️ Envía: ID,nombre,plan (ej. `12345,Carlos,USD`)")
-            bot.register_next_step_handler(msg2, agregar_autorizado)
+" for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']).date() resp += f"• ID {k} — vence {exp}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
-        elif text == "⏳ Ver vencimientos":
-            auth = load('autorizados')
-            resp = "⏳ *Vencimientos próximos:*\n\n"
-            hoy = datetime.utcnow()
-            for k,v in auth.items():
-                exp = datetime.fromisoformat(v['vence'])
-                dias = (exp - hoy).days
-                resp += f"- {v['nombre']} (ID {k}) → {dias} días restantes\n"
-            bot.send_message(uid, resp, parse_mode='Markdown')
+if text == "➕ Autorizar usuario":
+        prompt = bot.send_message(uid,
+            "✏️ Envía solo el ID del usuario a autorizar:\n`/autorizar <user_id>`",
+            parse_mode='Markdown'
+        )
+        return bot.register_next_step_handler(prompt, lambda m: bot.send_message(uid, "Usa el comando directamente: `/autorizar <user_id>`"))
 
-        elif text == "🗂 Ver grupos":
-            gr = load('grupos')
-            resp = "🗂 *Grupos Activos:*\n\n"
-            for k,v in gr.items():
-                resp += f"- Grupo ID {k} activado por {v['activado_por']} el {v['creado']}\n"
-            bot.send_message(uid, resp, parse_mode='Markdown')
+    if text == "➖ Desautorizar usuario":
+        prompt = bot.send_message(uid,
+            "✏️ Envía solo el ID del usuario a desautorizar:\n`/desautorizar <user_id>`",
+            parse_mode='Markdown'
+        )
+        return bot.register_next_step_handler(prompt, lambda m: bot.send_message(uid, "Usa el comando directamente: `/desautorizar <user_id>`"))
 
-        elif text == "📤 Mensaje a grupos":
-            msg2 = bot.send_message(uid, "✏️ Envía el mensaje que se reenviará a todos los grupos:")
-            bot.register_next_step_handler(msg2, enviar_a_grupos)
+    if text == "🔄 Ver vencimientos":
+        autorizados = list_authorized()
+        hoy = datetime.utcnow()
+        resp = "⏳ *Vencimientos próximos:*
 
-        elif text == "🔙 Salir":
-            bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
+" for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']) dias = (exp - hoy).days resp += f"• ID {k} — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    def agregar_autorizado(msg):
-        try:
-            data = msg.text.split(',')
-            uid, nombre, plan = data[0], data[1], data[2]
-            add_authorized(uid, nombre, plan)
-            bot.send_message(msg.from_user.id, f"✅ Usuario {nombre} (ID {uid}) autorizado correctamente.")
-        except Exception:
-            bot.send_message(msg.from_user.id, "❌ Formato incorrecto. Usa: ID,nombre,plan")
+if text == "🗂 Ver grupos":
+        grupos = load('grupos')
+        if not grupos:
+            return bot.send_message(uid, "ℹ️ No hay grupos registrados.")
+        resp = "🗂 *Grupos Activos:*
 
-    def enviar_a_grupos(msg):
-        texto = msg.text
-        gr = load('grupos')
-        for chat_id in gr.keys():
-            try:
-                bot.send_message(int(chat_id), texto)
-            except:
-                pass
-        bot.send_message(msg.from_user.id, "✅ Mensaje enviado a todos los grupos.")
+" for k, info in grupos.items(): resp += f"• Grupo {k} — activado por {info['activado_por']} el {info['creado']}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+
+if text == "🔙 Salir":
+        return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
+
+@bot.message_handler(commands=['autorizar'])
+def cmd_autorizar(message):
+    if message.from_user.id not in ADMINS:
+        return bot.reply_to(message, "⛔ No tienes permiso.")
+    parts = message.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return bot.reply_to(message,
+            "❌ Uso: `/autorizar <user_id>`", parse_mode='Markdown'
+        )
+    new_id = int(parts[1])
+    add_authorized(new_id, message.from_user.id)
+    bot.reply_to(message,
+        f"✅ Usuario `{new_id}` autorizado hasta `{(datetime.utcnow()+timedelta(days=VIGENCIA_DIAS)).date()}`",
+        parse_mode='Markdown'
+    )
+
+@bot.message_handler(commands=['desautorizar'])
+def cmd_desautorizar(message):
+    if message.from_user.id not in ADMINS:
+        return bot.reply_to(message, "⛔ No tienes permiso.")
+    parts = message.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        return bot.reply_to(message,
+            "❌ Uso: `/desautorizar <user_id>`", parse_mode='Markdown'
+        )
+    rem_id = int(parts[1])
+    success = remove_authorized(rem_id)
+    if success:
+        bot.reply_to(message, f"🗑️ Usuario `{rem_id}` desautorizado.", parse_mode='Markdown')
+    else:
+        bot.reply_to(message, f"ℹ️ Usuario `{rem_id}` no existía.")
+
