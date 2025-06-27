@@ -7,11 +7,10 @@ kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
     kb.row(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
 
-    bot.send_message(
-        msg.chat.id,
+    text = (
         "👑 *Panel de Administración*
 
-Elige una opción con los botones:", parse_mode='Markdown', reply_markup=kb )
+" "Elige una opción con los botones:" ) bot.send_message( msg.chat.id, text, parse_mode='Markdown', reply_markup=kb )
 
 @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
 def handle_admin(msg):
@@ -22,14 +21,14 @@ def handle_admin(msg):
         auth = list_authorized()
         if not auth:
             return bot.send_message(uid, "ℹ️ *No hay usuarios autorizados.*", parse_mode='Markdown')
-        resp  = "👥 *Lista de Autorizados:*
+        resp = "👥 *Lista de Autorizados:*
 
-" for k, info in auth.items(): exp = datetime.fromisoformat(info['vence']).date() usuario = info.get('nombre', '') resp += f"• {usuario} ({k}) — vence el {exp} " return bot.send_message(uid, resp, parse_mode='Markdown')
+" for k, info in auth.items(): exp = datetime.fromisoformat(info['vence']).date() usuario = info.get('username', '') or '' resp += f"• {usuario} ({k}) — vence el {exp}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "➕ Autorizar usuario":
         prompt = bot.send_message(
             uid,
-            "✏️ *Introduce el ID y el @usuario a autorizar, separados por coma:*\nEj: `12345,@usuario`",
+            "✏️ *Introduce el ID y el @usuario a autorizar, separados por coma:*\nEjemplo: `12345,@usuario`",
             parse_mode='Markdown'
         )
         return bot.register_next_step_handler(prompt, process_authorize)
@@ -46,17 +45,17 @@ if text == "➕ Autorizar usuario":
         auth = list_authorized()
         if not auth:
             return bot.send_message(uid, "ℹ️ *No hay usuarios autorizados.*", parse_mode='Markdown')
-        resp  = "⏳ *Vencimientos Próximos:*
+        resp = "⏳ *Vencimientos Próximos:*
 
-" now = datetime.utcnow() for k, info in auth.items(): dias = (datetime.fromisoformat(info['vence']) - now).days usuario = info.get('nombre', '') resp += f"• {usuario} ({k}) — {dias} día(s) restantes " return bot.send_message(uid, resp, parse_mode='Markdown')
+" now = datetime.utcnow() for k, info in auth.items(): dias = (datetime.fromisoformat(info['vence']) - now).days usuario = info.get('username', '') or '' resp += f"• {usuario} ({k}) — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "🗂 Ver grupos":
         grupos = load('grupos')
         if not grupos:
             return bot.send_message(uid, "ℹ️ *No hay grupos registrados.*", parse_mode='Markdown')
-        resp  = "🗂 *Grupos Activos:*
+        resp = "🗂 *Grupos Activos:*
 
-" for k, info in grupos.items(): resp += f"• Grupo {k} — activado por {info['activado_por']} el {info['creado']} " return bot.send_message(uid, resp, parse_mode='Markdown')
+" for k, info in grupos.items(): resp += f"• Grupo {k} — activado por {info['activado_por']} el {info['creado']}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "🔙 Salir":
         return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
