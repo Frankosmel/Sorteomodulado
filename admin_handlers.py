@@ -1,4 +1,4 @@
-from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove from config import ADMINS from auth import add_authorized, remove_authorized, list_authorized, is_valid, register_group from datetime import datetime
+from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove from config import ADMINS from storage import load from auth import add_authorized, remove_authorized, list_authorized from datetime import datetime, timedelta
 
 def register_admin_handlers(bot: TeleBot): @bot.message_handler(commands=['admin']) def admin_panel(msg): if msg.chat.type != 'private' or msg.from_user.id not in ADMINS: return bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
 
@@ -20,28 +20,27 @@ def handle_admin(msg):
             return bot.send_message(uid, "ℹ️ No hay usuarios autorizados aún.")
         resp = "👥 *Usuarios Autorizados:*
 
-" for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']).date() resp += f"• ID {k} — vence {exp}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+" for k, info in autorizados.items(): exp_date = datetime.fromisoformat(info['vence']).date() resp += f"• ID {k} — vence {exp_date}\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "➕ Autorizar usuario":
-        prompt = bot.send_message(uid,
-            "✏️ Envía solo el ID del usuario a autorizar:\n`/autorizar <user_id>`",
+        return bot.send_message(
+            uid,
+            "✏️ Usa el comando:\n`/autorizar <user_id>`",
             parse_mode='Markdown'
         )
-        return bot.register_next_step_handler(prompt, lambda m: bot.send_message(uid, "Usa el comando directamente: `/autorizar <user_id>`"))
 
     if text == "➖ Desautorizar usuario":
-        prompt = bot.send_message(uid,
-            "✏️ Envía solo el ID del usuario a desautorizar:\n`/desautorizar <user_id>`",
+        return bot.send_message(
+            uid,
+            "✏️ Usa el comando:\n`/desautorizar <user_id>`",
             parse_mode='Markdown'
         )
-        return bot.register_next_step_handler(prompt, lambda m: bot.send_message(uid, "Usa el comando directamente: `/desautorizar <user_id>`"))
 
     if text == "🔄 Ver vencimientos":
         autorizados = list_authorized()
-        hoy = datetime.utcnow()
         resp = "⏳ *Vencimientos próximos:*
 
-" for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']) dias = (exp - hoy).days resp += f"• ID {k} — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
+" now = datetime.utcnow() for k, info in autorizados.items(): exp = datetime.fromisoformat(info['vence']) dias = (exp - now).days resp += f"• ID {k} — {dias} día(s) restantes\n" return bot.send_message(uid, resp, parse_mode='Markdown')
 
 if text == "🗂 Ver grupos":
         grupos = load('grupos')
@@ -58,15 +57,15 @@ if text == "🔙 Salir":
 def cmd_autorizar(message):
     if message.from_user.id not in ADMINS:
         return bot.reply_to(message, "⛔ No tienes permiso.")
-    parts = message.text.split()
+    parts = message.text.strip().split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return bot.reply_to(message,
-            "❌ Uso: `/autorizar <user_id>`", parse_mode='Markdown'
-        )
+        return bot.reply_to(message, "❌ Uso: `/autorizar <user_id>`", parse_mode='Markdown')
     new_id = int(parts[1])
     add_authorized(new_id, message.from_user.id)
-    bot.reply_to(message,
-        f"✅ Usuario `{new_id}` autorizado hasta `{(datetime.utcnow()+timedelta(days=VIGENCIA_DIAS)).date()}`",
+    exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date()
+    return bot.reply_to(
+        message,
+        f"✅ Usuario `{new_id}` autorizado hasta {exp_date}",
         parse_mode='Markdown'
     )
 
@@ -74,15 +73,13 @@ def cmd_autorizar(message):
 def cmd_desautorizar(message):
     if message.from_user.id not in ADMINS:
         return bot.reply_to(message, "⛔ No tienes permiso.")
-    parts = message.text.split()
+    parts = message.text.strip().split()
     if len(parts) != 2 or not parts[1].isdigit():
-        return bot.reply_to(message,
-            "❌ Uso: `/desautorizar <user_id>`", parse_mode='Markdown'
-        )
+        return bot.reply_to(message, "❌ Uso: `/desautorizar <user_id>`", parse_mode='Markdown')
     rem_id = int(parts[1])
     success = remove_authorized(rem_id)
     if success:
-        bot.reply_to(message, f"🗑️ Usuario `{rem_id}` desautorizado.", parse_mode='Markdown')
+        return bot.reply_to(message, f"🗑️ Usuario `{rem_id}` desautorizado.", parse_mode='Markdown')
     else:
-        bot.reply_to(message, f"ℹ️ Usuario `{rem_id}` no existía.")
+        return bot.reply_to(message, f"ℹ️ Usuario `{rem_id}` no existía.")
 
