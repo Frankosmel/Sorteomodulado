@@ -1,6 +1,6 @@
 import os
 
-# Token del bot (prioriza la env var BOT_TOKEN, de lo contrario usa el literal)
+# Token del bot (prioriza la variable de entorno BOT_TOKEN, de lo contrario usa el valor directo)
 TOKEN = os.getenv("BOT_TOKEN", "7823475152:AAEwBz6z5x0EIxN2XSXlVbFUX_fk_p4T1OI")
 
 # IDs de super-administradores
@@ -19,4 +19,3 @@ FILES = {
     "jobs":           "jobs.json",
     "historial":      "historial.json"
 }
-
