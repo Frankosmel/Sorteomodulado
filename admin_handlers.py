@@ -4,13 +4,16 @@ def register_admin_handlers(bot: TeleBot): @bot.message_handler(commands=['admin
 
 kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(
-        KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario")
+        KeyboardButton("📋 Listar autorizados"),
+        KeyboardButton("➕ Autorizar usuario")
     )
     kb.row(
-        KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos")
+        KeyboardButton("➖ Desautorizar usuario"),
+        KeyboardButton("🔄 Ver vencimientos")
     )
     kb.row(
-        KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir")
+        KeyboardButton("🗂 Ver grupos"),
+        KeyboardButton("🔙 Salir")
     )
 
     bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
@@ -30,21 +33,21 @@ def handle_admin(msg):
             resp += f"• ID `{k}` — vence {exp_date}\n"
         return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    if text == "➕ Autorizar usuario":
+    elif text == "➕ Autorizar usuario":
         return bot.send_message(
             uid,
             "✏️ Para autorizar, usa el comando:\n`/autorizar <user_id>`",
             parse_mode='Markdown'
         )
 
-    if text == "➖ Desautorizar usuario":
+    elif text == "➖ Desautorizar usuario":
         return bot.send_message(
             uid,
             "✏️ Para desautorizar, usa el comando:\n`/desautorizar <user_id>`",
             parse_mode='Markdown'
         )
 
-    if text == "🔄 Ver vencimientos":
+    elif text == "🔄 Ver vencimientos":
         autorizados = list_authorized()
         resp = "⏳ *Vencimientos próximos:*\n\n"
         now = datetime.utcnow()
@@ -54,7 +57,7 @@ def handle_admin(msg):
             resp += f"• ID `{k}` — {dias} día(s) restantes\n"
         return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    if text == "🗂 Ver grupos":
+    elif text == "🗂 Ver grupos":
         grupos = load('grupos')
         if not grupos:
             return bot.send_message(uid, "ℹ️ No hay grupos registrados.")
@@ -63,7 +66,7 @@ def handle_admin(msg):
             resp += f"• Grupo `{k}` — activado por {info['activado_por']} el {info['creado']}\n"
         return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    if text == "🔙 Salir":
+    elif text == "🔙 Salir":
         return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
 @bot.message_handler(commands=['autorizar'])
