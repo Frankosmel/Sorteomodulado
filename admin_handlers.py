@@ -1,108 +1,97 @@
-from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove from storage import load, save from scheduler import set_group_timezone from config import ADMINS, FILES from draw_handlers import do_draw
+from telebot import TeleBot
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from config import ADMINS, VIGENCIA_DIAS
+from storage import load
+from auth import add_authorized, remove_authorized, list_authorized
+from datetime import datetime
 
-def register_owner_handlers(bot: TeleBot): @bot.message_handler(commands=['misgrupos']) def mis_grupos(msg): if msg.chat.type != 'private': return uid = msg.from_user.id grupos = load('grupos') propios = {gid:info for gid,info in grupos.items() if info.get('activado_por') == uid} if not propios: return bot.reply_to(msg, "ℹ️ No tienes ningún grupo activado.")
-
-kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    for gid in propios:
-        kb.add(KeyboardButton(f"Gestionar {gid}"))
-    kb.add(KeyboardButton("🔙 Salir"))
-
-    bot.send_message(
-        uid,
-        "📂 *Tus Grupos Activos:*
-
-Selecciona uno para gestionar:", parse_mode='Markdown', reply_markup=kb )
-
-@bot.message_handler(func=lambda m: m.chat.type=='private')
-def handle_owner_selection(msg):
-    uid  = msg.from_user.id
-    text = msg.text.strip()
-    grupos = load('grupos')
-
-    if text == "🔙 Salir":
-        return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
-
-    if text.startswith("Gestionar "):
-        gid = text.split()[1]
-        info = grupos.get(gid)
-        if not info or info.get('activado_por') != uid:
-            return bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
+def register_admin_handlers(bot: TeleBot):
+    @bot.message_handler(commands=['admin'])
+    def admin_panel(msg):
+        if msg.chat.type != 'private' or msg.from_user.id not in ADMINS:
+            return bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
 
         kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("👥 Ver participantes"), KeyboardButton("🏆 Ver top invitadores"))
-        kb.row(KeyboardButton("🔄 Reiniciar sorteo"), KeyboardButton("🗑️ Borrar lista de sorteo"))
-        kb.row(KeyboardButton("🌐 Cambiar zona horaria"), KeyboardButton("🔙 Salir"))
+        kb.row("📋 Listar autorizados", "➕ Autorizar usuario")
+        kb.row("➖ Desautorizar usuario", "🔄 Ver vencimientos")
+        kb.row("🗂 Ver grupos", "🔙 Salir")
 
-        bot.user_data = getattr(bot, 'user_data', {})
-        bot.user_data[uid] = gid
+        bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
 
-        return bot.send_message(
-            uid,
-            f"⚙️ *Gestión Grupo {gid}:*
+    @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
+    def handle_admin(msg):
+        text = msg.text.strip()
+        uid = msg.from_user.id
 
-Selecciona una opción del menú:", parse_mode='Markdown', reply_markup=kb )
+        if text == "📋 Listar autorizados":
+            autorizados = list_authorized()
+            if not autorizados:
+                return bot.send_message(uid, "ℹ️ No hay usuarios autorizados aún.")
+            resp = "👥 *Usuarios Autorizados:*\n\n"
+            for k, info in autorizados.items():
+                exp = datetime.fromisoformat(info['vence']).date()
+                resp += f"• ID `{k}` — vence {exp}\n"
+            return bot.send_message(uid, resp, parse_mode='Markdown')
 
-gid = getattr(bot, 'user_data', {}).get(uid)
-    if not gid:
-        return
+        if text == "➕ Autorizar usuario":
+            return bot.send_message(uid,
+                "✏️ Para autorizar, usa:\n`/autorizar <user_id>`",
+                parse_mode='Markdown'
+            )
 
-    if text == "👥 Ver participantes":
-        partes = load('participantes').get(gid, {})
-        msg_text = f"👥 *Participantes Grupo {gid}:*\n\n"
-        for uid2, info in partes.items():
-            if info.get('username'):
-                msg_text += f"• @{info['username']} — {info['nombre']}\n"
-            else:
-                msg_text += f"• {info['nombre']} — ID: {uid2}\n"
-        return bot.send_message(uid, msg_text, parse_mode='Markdown')
+        if text == "➖ Desautorizar usuario":
+            return bot.send_message(uid,
+                "✏️ Para desautorizar, usa:\n`/desautorizar <user_id>`",
+                parse_mode='Markdown'
+            )
 
-    if text == "🏆 Ver top invitadores":
-        invs = load('invitaciones').get(gid, {})
-        if not invs:
-            return bot.send_message(uid, "📉 No hay invitados registrados.")
-        top = sorted(invs.items(), key=lambda x:x[1], reverse=True)[:10]
-        msg_text = f"🏆 *Top Invitadores Grupo {gid}:*\n\n"
-        for i,(uid2,count) in enumerate(top, start=1):
-            msg_text += f"{i}. ID {uid2} — {count} invitado(s)\n"
-        return bot.send_message(uid, msg_text, parse_mode='Markdown')
+        if text == "🔄 Ver vencimientos":
+            autorizados = list_authorized()
+            resp = "⏳ *Vencimientos próximos:*\n\n"
+            now = datetime.utcnow()
+            for k, info in autorizados.items():
+                dias = (datetime.fromisoformat(info['vence']) - now).days
+                resp += f"• ID `{k}` — {dias} día(s) restantes\n"
+            return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    if text == "🔄 Reiniciar sorteo":
-        sorteos = load('sorteo')
-        sorteos[gid] = {}
-        save('sorteo', sorteos)
-        return bot.send_message(uid, f"🔁 Sorteo del grupo {gid} ha sido reiniciado.")
+        if text == "🗂 Ver grupos":
+            grupos = load('grupos')
+            if not grupos:
+                return bot.send_message(uid, "ℹ️ No hay grupos registrados.")
+            resp = "🗂 *Grupos Activos:*\n\n"
+            for k, info in grupos.items():
+                resp += f"• Grupo `{k}` — activado por {info['activado_por']} el {info['creado']}\n"
+            return bot.send_message(uid, resp, parse_mode='Markdown')
 
-    if text == "🗑️ Borrar lista de sorteo":
-        sorteos = load('sorteo')
-        if gid in sorteos:
-            del sorteos[gid]
-            save('sorteo', sorteos)
-            return bot.send_message(uid, f"🗑️ Lista de sorteo del grupo {gid} borrada.")
+        if text == "🔙 Salir":
+            return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
+
+    @bot.message_handler(commands=['autorizar'])
+    def cmd_autorizar(message):
+        if message.from_user.id not in ADMINS:
+            return bot.reply_to(message, "⛔ No tienes permiso.")
+        parts = message.text.strip().split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Uso: /autorizar <user_id>", parse_mode='Markdown')
+        new_id = int(parts[1])
+        add_authorized(new_id, message.from_user.id)
+        exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date()
+        return bot.reply_to(
+            message,
+            f"✅ Usuario `{new_id}` autorizado hasta {exp_date}",
+            parse_mode='Markdown'
+        )
+
+    @bot.message_handler(commands=['desautorizar'])
+    def cmd_desautorizar(message):
+        if message.from_user.id not in ADMINS:
+            return bot.reply_to(message, "⛔ No tienes permiso.")
+        parts = message.text.strip().split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            return bot.reply_to(message, "❌ Uso: /desautorizar <user_id>", parse_mode='Markdown')
+        rem_id = int(parts[1])
+        success = remove_authorized(rem_id)
+        if success:
+            return bot.reply_to(message, f"🗑️ Usuario `{rem_id}` desautorizado.", parse_mode='Markdown')
         else:
-            return bot.send_message(uid, "ℹ️ No había lista de sorteo activa.")
-
-    if text == "🌐 Cambiar zona horaria":
-        prompt = bot.send_message(
-            uid,
-            "✏️ Envía: `<chat_id>,<Zona>`\nEjemplo: `-1001234567890,America/Havana`"
-        )
-        return bot.register_next_step_handler(prompt, cambiar_zona)
-
-def cambiar_zona(msg):
-    try:
-        chat_id, tz = map(str.strip, msg.text.split(','))
-        from zoneinfo import ZoneInfo
-        ZoneInfo(tz)
-        set_group_timezone(chat_id, tz)
-        bot.send_message(
-            msg.from_user.id,
-            f"✅ Zona horaria de *{chat_id}* actualizada a *{tz}*",
-            parse_mode='Markdown'
-        )
-    except Exception:
-        bot.send_message(
-            msg.from_user.id,
-            "❌ Formato inválido o zona no reconocida.\nUsa: `-1001234567890,America/Havana`",
-            parse_mode='Markdown'
-        )
-
+            return bot.reply_to(message, f"ℹ️ Usuario `{rem_id}` no existía.")
