@@ -1,0 +1,12 @@
+# Entorno virtual
+venv/
+__pycache__/
+
+# Datos de estado
+autorizados.json
+grupos.json
+participantes.json
+invitaciones.json
+sorteo.json
+jobs.json
+historial.json
