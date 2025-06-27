@@ -3,9 +3,15 @@ from telebot import TeleBot from telebot.types import ReplyKeyboardMarkup, Keybo
 def register_admin_handlers(bot: TeleBot): @bot.message_handler(commands=['admin']) def admin_panel(msg): if msg.chat.type != 'private' or msg.from_user.id not in ADMINS: return bot.reply_to(msg, "⛔ Acceso denegado o usa este comando en privado.")
 
 kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario"))
-    kb.row(KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos"))
-    kb.row(KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir"))
+    kb.row(
+        KeyboardButton("📋 Listar autorizados"), KeyboardButton("➕ Autorizar usuario")
+    )
+    kb.row(
+        KeyboardButton("➖ Desautorizar usuario"), KeyboardButton("🔄 Ver vencimientos")
+    )
+    kb.row(
+        KeyboardButton("🗂 Ver grupos"), KeyboardButton("🔙 Salir")
+    )
 
     bot.send_message(msg.chat.id, "👑 Panel Admin — Elige una opción:", reply_markup=kb)
 
