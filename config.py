@@ -18,5 +18,5 @@ FILES = {
     "sorteo":         "sorteo.json",
     "jobs":           "jobs.json",
     "historial":      "historial.json",
-    "receipts":       "receipts.json"     # <-- agregado para guardar comprobantes
+    "pagos":          "pagos.json"
 }
