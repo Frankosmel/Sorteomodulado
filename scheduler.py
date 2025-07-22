@@ -52,10 +52,9 @@ def _run_scheduled_draw(bot, job_id: str):
     if not job:
         return
     chat_id = job['chat_id']
-    # enviamos el comando sortear automáticamente
     bot.send_message(int(chat_id), "⏳ ¡Comienza el sorteo programado!")
     bot.send_message(int(chat_id), "/sortear")
-    # opcionalmente, eliminamos el job tras ejecutarlo:
+    # Eliminamos el job tras ejecutarlo
     del jobs[job_id]
     save('jobs', jobs)
     sched.remove_job(job_id)
@@ -85,3 +84,17 @@ def start_reminders(bot):
         id='daily_reminder'
     )
     print(f"[Scheduler] Recordatorios programados (5 días antes).")
+
+# --------------- Gestión de zona horaria por grupo ---------------
+
+def set_group_timezone(chat_id: str, tz: str):
+    """
+    Guarda la zona horaria para un grupo en grupos.json.
+    chat_id: ID del chat (string).
+    tz: identificador de ZoneInfo, p.ej. "America/Havana".
+    """
+    grupos = load('grupos')
+    info = grupos.setdefault(str(chat_id), {})
+    info['timezone'] = tz
+    save('grupos', grupos)
+    print(f"[Scheduler] Zona horaria de grupo {chat_id} actualizada a {tz}")
