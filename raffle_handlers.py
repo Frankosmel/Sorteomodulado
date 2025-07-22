@@ -1,21 +1,15 @@
 # raffle_handlers.py
 
 from telebot import TeleBot
-from telebot.types import Message
 from storage import load, save
 from config import FILES
-from scheduler import schedule_raffle
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import random
 
 def register_referral_handlers(bot: TeleBot):
-    """
-    Detecta quién agrega a nuevos miembros en el grupo y
-    actualiza conteos de participantes e invitaciones.
-    """
     @bot.message_handler(content_types=['new_chat_members'])
-    def handle_referrals(msg: Message):
+    def handle_referrals(msg):
         chat_id = str(msg.chat.id)
         participantes = load('participantes')
         invitaciones  = load('invitaciones')
@@ -36,16 +30,9 @@ def register_referral_handlers(bot: TeleBot):
         save('participantes', participantes)
         save('invitaciones', invitaciones)
 
-
 def register_raffle_handlers(bot: TeleBot):
-    """
-    Manejadores para inscripción en sorteos, listado, ranking,
-    programación y ejecución inmediata del sorteo.
-    """
-
     @bot.message_handler(commands=['addsorteo'])
-    def addsorteo(msg: Message):
-        """Inscribe al usuario en el sorteo del grupo."""
+    def addsorteo(msg):
         chat_id = str(msg.chat.id)
         user    = msg.from_user
         user_id = str(user.id)
@@ -68,8 +55,7 @@ def register_raffle_handlers(bot: TeleBot):
         )
 
     @bot.message_handler(commands=['sorteo_lista'])
-    def lista_sorteo(msg: Message):
-        """Muestra quiénes están inscritos en el sorteo."""
+    def lista_sorteo(msg):
         chat_id = str(msg.chat.id)
         sorteos = load('sorteo').get(chat_id, {})
 
@@ -87,130 +73,26 @@ def register_raffle_handlers(bot: TeleBot):
                 texto += f"• {nombre} — ID: {uid}\n"
         bot.reply_to(msg, texto, parse_mode='Markdown')
 
-    @bot.message_handler(commands=['top'])
-    def mostrar_top(msg: Message):
-        """Ranking de quién ha traído más usuarios."""
-        chat_id       = str(msg.chat.id)
-        invitaciones  = load('invitaciones').get(chat_id, {})
-        participantes = load('participantes').get(chat_id, {})
-
-        if not invitaciones:
-            bot.reply_to(msg, "📉 Aún nadie ha invitado a otros miembros.")
-            return
-
-        top = sorted(invitaciones.items(), key=lambda x: x[1], reverse=True)
-        texto = "🏆 *Top Invitadores del Grupo:*\n\n"
-        for i, (uid, count) in enumerate(top[:10], start=1):
-            info = participantes.get(uid, {"nombre": "Usuario", "username": None})
-            if info.get("username"):
-                mention = f"@{info['username']} — {info['nombre']}"
-            else:
-                mention = f"{info['nombre']} — ID: {uid}"
-            texto += f"{i}. {mention} — {count} invitado(s)\n"
-
-        bot.reply_to(msg, texto, parse_mode='Markdown')
-
-    @bot.message_handler(commands=['lista'])
-    def mostrar_lista(msg: Message):
-        """Lista todos los usuarios agregados al grupo."""
-        chat_id = str(msg.chat.id)
-        datos   = load('participantes').get(chat_id, {})
-
-        if not datos:
-            bot.reply_to(msg, "📭 Aún no se han registrado agregados.")
-            return
-
-        texto = "👥 *Usuarios agregados al grupo:*\n\n"
-        for uid, info in datos.items():
-            if info.get("username"):
-                texto += f"• @{info['username']} — {info['nombre']}\n"
-            else:
-                texto += f"• {info['nombre']} — ID: {uid}\n"
-
-        bot.reply_to(msg, texto, parse_mode='Markdown')
-
-    @bot.message_handler(commands=['agendar_sorteo'])
-    def agendar_sorteo(msg: Message):
-        """
-        Programa un sorteo en el futuro. Uso:
-          /agendar_sorteo YYYY-MM-DD_HH:MM
-        Se interpretará en la zona horaria del grupo (o UTC si no está configurada).
-        """
-        chat_id = str(msg.chat.id)
-        text    = msg.text.partition(' ')[2].strip()
-        if not text:
-            bot.reply_to(msg,
-                "❌ Formato inválido.\n"
-                "Uso: `/agendar_sorteo YYYY-MM-DD_HH:MM`",
-                parse_mode='Markdown'
-            )
-            return
-
-        # Parsear fecha y hora
-        try:
-            dt_naive = datetime.strptime(text, "%Y-%m-%d_%H:%M")
-        except ValueError:
-            return bot.reply_to(msg,
-                "❌ Fecha u hora no válidas.\n"
-                "Asegúrate de usar `YYYY-MM-DD_HH:MM`.",
-                parse_mode='Markdown'
-            )
-
-        # Obtener zona del grupo
-        grp_info = load('grupos').get(chat_id, {})
-        tz_name  = grp_info.get('timezone', 'UTC')
-        try:
-            tz = ZoneInfo(tz_name)
-        except Exception:
-            return bot.reply_to(msg,
-                f"❌ Zona horaria `{tz_name}` inválida o no configurada.\n"
-                "Usa `/misgrupos` → Cambiar zona para ajustar.",
-                parse_mode='Markdown'
-            )
-
-        # Generar datetime con zona
-        run_at = dt_naive.replace(tzinfo=tz)
-
-        # Programar sorteo
-        schedule_raffle(bot, chat_id, run_at)
-        bot.reply_to(msg,
-            f"✅ Sorteo programado para *{run_at.strftime('%Y-%m-%d %H:%M')}* ({tz_name}).",
-            parse_mode='Markdown'
-        )
-
-    @bot.message_handler(commands=['sortear'])
-    def sortear(msg: Message):
-        """
-        Ejecuta el sorteo inmediato. Toma los inscritos, elige un ganador
-        y limpia la lista. Solo puede usarlo el administrador del grupo.
-        """
-        chat_id = str(msg.chat.id)
-        user_id = msg.from_user.id
-        # (Aquí podrías validar admins de ese grupo si lo deseas)
-
-        sorteos = load('sorteo')
-        participantes = sorteos.get(chat_id, {})
-
-        if not participantes:
-            return bot.reply_to(msg, "⚠️ No hay participantes para sortear.")
-
-        # Elegir ganador al azar
-        ganador_id, info = random.choice(list(participantes.items()))
-        nombre = info.get('nombre', '')
-        username = info.get('username')
-        if username:
-            menc = f"@{username}"
-        else:
-            menc = f"[{nombre}](tg://user?id={ganador_id})"
-
-        # Anunciar ganador
-        bot.reply_to(
-            msg,
-            f"🎉 *Ganador del sorteo:* {menc}\n"
-            "¡Felicidades!",
-            parse_mode='Markdown'
-        )
-
-        # Limpiar lista de ese chat
-        del sorteos[chat_id]
-        save('sorteo', sorteos)
+def _perform_draw(chat_id: str, bot: TeleBot, name: str):
+    """
+    Ejecuta un sorteo:
+     1) Elige ganador aleatorio de `sorteo.json` para chat_id.
+     2) Envía mensaje al grupo con nombre.
+     3) Borra la lista de participantes para ese chat.
+    """
+    sorteos = load('sorteo').get(chat_id, {})
+    if not sorteos:
+        return bot.send_message(int(chat_id), "ℹ️ No hay participantes para sortear.")
+    ganador_id, info = random.choice(list(sorteos.items()))
+    nombre   = info.get('nombre')
+    username = info.get('username')
+    mention = f"@{username}" if username else f"[{nombre}](tg://user?id={ganador_id})"
+    bot.send_message(
+        int(chat_id),
+        f"🎉 *¡Ganador del sorteo “{name}”!* 🎉\n\n{mention}",
+        parse_mode='Markdown'
+    )
+    # limpiar lista
+    all_sorteos = load('sorteo')
+    all_sorteos.pop(chat_id, None)
+    save('sorteo', all_sorteos)
