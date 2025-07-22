@@ -1,18 +1,19 @@
+# scheduler.py
+
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.date import DateTrigger
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from storage import load, save
 from config import FILES
-from draw_handlers import do_draw
-from zoneinfo import ZoneInfo
 
-# Archivos de datos
-JOBS_FILE  = FILES["jobs"]
-GROUPS_FILE = FILES["grupos"]
-
-# Inicializar Scheduler (sin timezone global)
+# Instancia global del scheduler
 sched = BackgroundScheduler()
 
-# Asegura que exista jobs.json
+# Nombre del archivo de jobs
+JOBS_FILE = FILES['jobs']
+
+# Asegura que exista jobs.json al arrancar
 try:
     with open(JOBS_FILE, 'r'):
         pass
@@ -20,81 +21,83 @@ except FileNotFoundError:
     with open(JOBS_FILE, 'w') as f:
         f.write("{}")
 
-# Asegura que exista grupos.json
-try:
-    with open(GROUPS_FILE, 'r'):
-        pass
-except FileNotFoundError:
-    with open(GROUPS_FILE, 'w') as f:
-        f.write("{}")
-
-
-def get_group_timezone(chat_id: str) -> str:
-    """
-    Lee la zona horaria configurada para el grupo, o 'UTC' por defecto.
-    """
-    groups = load('grupos')
-    info = groups.get(chat_id, {})
-    return info.get('timezone', 'UTC')
-
-
-def set_group_timezone(chat_id: str, tz_name: str):
-    """
-    Actualiza la zona horaria para un grupo en grupos.json.
-    """
-    groups = load('grupos')
-    groups.setdefault(chat_id, {})
-    groups[chat_id]['timezone'] = tz_name
-    save('grupos', groups)
-
 
 def load_jobs(bot):
     """
-    Carga y programa todos los jobs guardados en jobs.json.
+    Carga todos los jobs guardados en jobs.json y los programa de nuevo en el scheduler.
+    Usa la zona horaria de cada grupo si está configurada en grupos.json.
     """
-    jobs = load('jobs')
-    for job_id, job in jobs.items():
-        run_time = datetime.fromisoformat(job['run_at'])
-        print(f"[Scheduler] Cargando job {job_id} → {run_time} en grupo {job['chat_id']}")
+    jobs_data = load('jobs')
+    grupos     = load('grupos')
+
+    for job_id, job in jobs_data.items():
+        chat_id = job['chat_id']
+        run_at_iso = job['run_at']
+        # Determina la zona horaria del grupo, por defecto UTC
+        tz_name = grupos.get(str(chat_id), {}).get('timezone', 'UTC')
+        tz = ZoneInfo(tz_name)
+
+        # Parse ISO y asigna tz
+        run_at = datetime.fromisoformat(run_at_iso)
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=tz)
+
+        # Crea el trigger con fecha y zona
+        trigger = DateTrigger(run_date=run_at, timezone=tz)
+
+        # Función que dispara el sorteo programado
+        def _job_action(chat=chat_id):
+            bot.do_draw(int(chat))
+
+        # Añade al scheduler
         sched.add_job(
-            func=lambda chat_id=job['chat_id']: _run_scheduled_draw(bot, chat_id),
-            trigger='date',
-            run_date=run_time,
-            id=job_id
+            func=_job_action,
+            trigger=trigger,
+            id=job_id,
+            replace_existing=True
         )
+
     sched.start()
-    print("[Scheduler] Scheduler iniciado y jobs cargados.")
+    print(f"[Scheduler] Scheduler iniciado y {len(jobs_data)} jobs cargados.")
 
 
-def schedule_raffle(bot, chat_id: str, run_at: datetime):
+def schedule_raffle(bot, chat_id: int, run_at: datetime):
     """
-    Programa (y persiste) un nuevo sorteo para chat_id en la fecha/hora run_at,
-    usando la zona horaria configurada para ese grupo.
+    Programa un nuevo sorteo:
+      - Crea un ID único por chat y timestamp.
+      - Guarda en jobs.json.
+      - Añade al scheduler en memoria.
     """
-    tz_name = get_group_timezone(chat_id)
-    run_at_tz = run_at.replace(tzinfo=ZoneInfo(tz_name))
+    jobs_data = load('jobs')
+    job_id = f"raffle_{chat_id}_{int(run_at.timestamp())}"
 
-    jobs = load('jobs')
-    job_id = f"raffle_{chat_id}_{int(run_at_tz.timestamp())}"
-    jobs[job_id] = {
-        "chat_id": chat_id,
-        "run_at": run_at_tz.isoformat()
+    # Guarda en almacenamiento persistente
+    jobs_data[job_id] = {
+        "chat_id": str(chat_id),
+        "run_at":  run_at.isoformat()
     }
-    save('jobs', jobs)
+    save('jobs', jobs_data)
 
-    print(f"[Scheduler] Programando job {job_id} → {run_at_tz} en grupo {chat_id}")
+    # Recupera zona del grupo
+    grupos = load('grupos')
+    tz_name = grupos.get(str(chat_id), {}).get('timezone', 'UTC')
+    tz = ZoneInfo(tz_name)
+
+    # Asegura que run_at tenga tzinfo
+    if run_at.tzinfo is None:
+        run_at = run_at.replace(tzinfo=tz)
+
+    trigger = DateTrigger(run_date=run_at, timezone=tz)
+
+    # Acción a ejecutar
+    def _job_action():
+        bot.do_draw(int(chat_id))
+
     sched.add_job(
-        func=lambda: _run_scheduled_draw(bot, chat_id),
-        trigger='date',
-        run_date=run_at_tz,
-        id=job_id
+        func=_job_action,
+        trigger=trigger,
+        id=job_id,
+        replace_existing=True
     )
 
-
-def _run_scheduled_draw(bot, chat_id: str):
-    """
-    Job que se ejecuta al llegar la fecha: anuncia y ejecuta el draw.
-    """
-    print(f"[Scheduler] Ejecutando sorteo programado en grupo {chat_id}")
-    bot.send_message(int(chat_id), "⏳ ¡Comienza el sorteo programado!")
-    do_draw(bot, chat_id)
+    print(f"[Scheduler] Programando job {job_id} → {run_at.isoformat()} en grupo {chat_id}")
