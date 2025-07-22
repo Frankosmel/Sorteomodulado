@@ -1,12 +1,11 @@
 # scheduler.py
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from storage import load, save
-from config import FILES, VIGENCIA_DIAS
-# IMPORTAMOS la lógica de sorteo directo
-from raffle_handlers import _perform_draw
+from config import FILES
+import random
 
 # Scheduler global
 sched = BackgroundScheduler()
@@ -34,7 +33,6 @@ def load_jobs(bot):
     """
     jobs = load('jobs')
     for job_id, job in jobs.items():
-        # El run_at ya se guarda como ISO con zona o sin ella
         run_time = datetime.fromisoformat(job['run_at'])
         sched.add_job(
             func=lambda jid=job_id: _run_scheduled_draw(bot, jid),
@@ -51,7 +49,6 @@ def load_jobs(bot):
 def schedule_raffle(bot, chat_id: str, run_at: datetime):
     """
     Programa un nuevo sorteo para chat_id en la fecha run_at.
-    
     - chat_id: string del ID de grupo.
     - run_at: un datetime AWARE (con tzinfo) o NAIVE que se asume en UTC.
     """
@@ -59,14 +56,12 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
     if run_at.tzinfo is not None:
         run_at_utc = run_at.astimezone(timezone.utc)
     else:
-        # sin tzinfo, lo tomamos ya en UTC
         run_at_utc = run_at.replace(tzinfo=timezone.utc)
     
     jobs = load('jobs')
     job_id = f"raffle_{chat_id}_{int(run_at_utc.timestamp())}"
     jobs[job_id] = {
         "chat_id": chat_id,
-        # Guardamos ISO con offset UTC
         "run_at": run_at_utc.isoformat()
     }
     save('jobs', jobs)
@@ -84,8 +79,10 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
 # -------------------------------------------------------------------
 def _run_scheduled_draw(bot, job_id: str):
     """
-    Helper interno que dispara el sorteo y lo anuncia en el grupo,
-    ELIGIENDO directamente al ganador y borrando el job.
+    Helper interno que dispara el sorteo:
+    - Selecciona un ganador al azar de los inscritos.
+    - Envía mensaje al grupo.
+    - Limpia la lista de sorteo y elimina el job.
     """
     jobs = load('jobs')
     job = jobs.get(job_id)
@@ -93,10 +90,35 @@ def _run_scheduled_draw(bot, job_id: str):
         return
     chat_id = job['chat_id']
 
-    # Ejecutamos el sorteo (elige ganador y vacía la lista)
-    _perform_draw(bot, chat_id)
+    # Carga participantes
+    sorteos = load('sorteo')
+    participantes = sorteos.get(chat_id, {})
+    if not participantes:
+        bot.send_message(int(chat_id), "⚠️ No había participantes para el sorteo programado.")
+    else:
+        # Elegir ganador
+        ganador_id, info = random.choice(list(participantes.items()))
+        nombre = info.get('nombre', '')
+        username = info.get('username')
+        if username:
+            menc = f"@{username}"
+        else:
+            menc = f"[{nombre}](tg://user?id={ganador_id})"
+        
+        # Anunciar
+        bot.send_message(
+            int(chat_id),
+            f"🎉 *Ganador del sorteo programado:*\n\n"
+            f"¡Felicidades {menc}! 🎊",
+            parse_mode='Markdown'
+        )
 
-    # Eliminamos el job tras ejecutarlo
+    # Limpiar la lista de ese chat
+    if chat_id in sorteos:
+        del sorteos[chat_id]
+        save('sorteo', sorteos)
+
+    # Eliminar job
     del jobs[job_id]
     save('jobs', jobs)
     try:
@@ -108,16 +130,11 @@ def _run_scheduled_draw(bot, job_id: str):
 #  Recordatorios de suscripción (5 días antes)
 # -------------------------------------------------------------------
 def reminder_job(bot):
-    """
-    Envía un aviso a cada usuario autorizado 5 días antes del vencimiento.
-    Se ejecuta a diario (cron UTC).
-    """
     auth = load('autorizados')
     ahora = datetime.utcnow().replace(tzinfo=timezone.utc)
     for uid, info in auth.items():
         vence = datetime.fromisoformat(info['vence'])
         if vence.tzinfo is None:
-            # asumimos ISO naive en UTC
             vence = vence.replace(tzinfo=timezone.utc)
         dias_rest = (vence - ahora).days
         if dias_rest == 5:
@@ -128,11 +145,6 @@ def reminder_job(bot):
             )
 
 def start_reminders(bot):
-    """
-    Programa el job diario que ejecuta reminder_job cada medianoche UTC.
-    Debe llamarse al arrancar el bot.
-    """
-    # Evitamos duplicar la tarea si ya existe
     if not sched.get_job('daily_reminder'):
         sched.add_job(
             func=lambda: reminder_job(bot),
@@ -146,13 +158,7 @@ def start_reminders(bot):
 #  Gestión de zona horaria por grupo
 # -------------------------------------------------------------------
 def set_group_timezone(chat_id: str, tz: str):
-    """
-    Guarda la zona horaria para un grupo en grupos.json.
-    - chat_id: ID del chat (string).
-    - tz: identificador de ZoneInfo, p.ej. "America/Havana".
-    """
-    # valida la zona (lanzará excepción si inválida)
-    ZoneInfo(tz)
+    ZoneInfo(tz)  # valida zona o lanza excepción
     grupos = load('grupos')
     info = grupos.setdefault(str(chat_id), {})
     info['timezone'] = tz
