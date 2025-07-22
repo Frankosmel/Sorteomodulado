@@ -5,23 +5,22 @@ from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemo
 from storage import load, save
 from scheduler import schedule_raffle
 from config import FILES
-from zoneinfo import ZoneInfo, available_timezones
+from zoneinfo import available_timezones, ZoneInfo
 from datetime import datetime
 
-# Pre-construimos un dict de macrozonas a zonas filtradas
-_MACROZONAS = {
-    "Africa":     [tz for tz in available_timezones() if tz.startswith("Africa/")],
-    "America":    [tz for tz in available_timezones() if tz.startswith("America/")],
-    "Asia":       [tz for tz in available_timezones() if tz.startswith("Asia/")],
-    "Atlantic":   [tz for tz in available_timezones() if tz.startswith("Atlantic/")],
-    "Australia":  [tz for tz in available_timezones() if tz.startswith("Australia/")],
-    "Europe":     [tz for tz in available_timezones() if tz.startswith("Europe/")],
-    "Pacific":    [tz for tz in available_timezones() if tz.startswith("Pacific/")],
+# Define las macro-zonas y, para cada una, filtramos de zoneinfo.available_timezones()
+MACROZONES = {
+    "Africa":    [tz for tz in available_timezones() if tz.startswith("Africa/")],
+    "America":   [tz for tz in available_timezones() if tz.startswith("America/")],
+    "Asia":      [tz for tz in available_timezones() if tz.startswith("Asia/")],
+    "Atlantic":  [tz for tz in available_timezones() if tz.startswith("Atlantic/")],
+    "Australia": [tz for tz in available_timezones() if tz.startswith("Australia/")],
+    "Europe":    [tz for tz in available_timezones() if tz.startswith("Europe/")],
+    "Pacific":   [tz for tz in available_timezones() if tz.startswith("Pacific/")],
 }
 
 def register_owner_handlers(bot: TeleBot):
-
-    # Paso 1: Mostrar lista de grupos del owner
+    # Paso 1: Muesta los grupos que gestionas
     @bot.message_handler(commands=['misgrupos'])
     def mis_grupos(msg):
         if msg.chat.type != 'private':
@@ -35,54 +34,55 @@ def register_owner_handlers(bot: TeleBot):
         for gid in propios:
             kb.add(KeyboardButton(f"Gestionar {gid}"))
         kb.add(KeyboardButton("🔙 Salir"))
-        bot.send_message(
-            uid,
+        bot.send_message(uid,
             "📂 *Tus Grupos Activos:*\nSelecciona uno para gestionar:",
             parse_mode='Markdown',
             reply_markup=kb
         )
 
-    # Paso 2: Manejar selección de grupo y sub-opciones
+    # Paso 2: Manejo de todas las opciones de propietario
     @bot.message_handler(func=lambda m: m.chat.type=='private')
     def handle_owner_selection(msg):
-        uid = msg.from_user.id
+        uid  = msg.from_user.id
         text = msg.text.strip()
         grupos = load('grupos')
 
-        # 🔙 Salir completo
+        # 🔙 Salir de menú
         if text == "🔙 Salir":
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
-        # Selección de un grupo
+        # Seleccionar grupo
         if text.startswith("Gestionar "):
             gid = text.split()[1]
             info = grupos.get(gid)
             if not info or info.get('activado_por') != uid:
                 return bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
+            # Construye menú principal de gestión
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
-            kb.add(KeyboardButton("👥 Ver participantes"))
-            kb.add(KeyboardButton("🏆 Ver top invitadores"))
-            kb.add(KeyboardButton("🔄 Reiniciar sorteo"))
-            kb.add(KeyboardButton("🗑️ Borrar lista de sorteo"))
-            kb.add(KeyboardButton("⏰ Agendar sorteo"))
-            kb.add(KeyboardButton("🌐 Cambiar zona horaria"))
+            kb.add(KeyboardButton("👥 Ver participantes"),
+                   KeyboardButton("🏆 Ver top invitadores"),
+                   KeyboardButton("🔄 Reiniciar sorteo"))
+            kb.add(KeyboardButton("🗑️ Borrar lista de sorteo"),
+                   KeyboardButton("⏰ Agendar sorteo"),
+                   KeyboardButton("🌐 Cambiar zona horaria"))
             kb.add(KeyboardButton("🔙 Salir"))
-            # Guardamos en user_data el grupo activo
+            # Guarda contexto de grupo
             bot.user_data = getattr(bot, 'user_data', {})
-            bot.user_data[uid] = gid
-            return bot.send_message(
-                uid,
+            bot.user_data[uid] = {"group": gid}
+            return bot.send_message(uid,
                 f"⚙️ *Gestión Grupo {gid}*\nSelecciona una opción:",
                 parse_mode='Markdown',
                 reply_markup=kb
             )
 
-        # Contexto de grupo activo
-        gid = getattr(bot, 'user_data', {}).get(uid)
-        if not gid:
+        # A partir de aquí necesitamos tener el grupo en contexto
+        ctx = getattr(bot, 'user_data', {}).get(uid)
+        if not ctx or 'group' not in ctx:
             return
 
-        # 👥 Ver participantes
+        gid = ctx['group']
+
+        # 📂 Ver participantes
         if text == "👥 Ver participantes":
             partes = load('participantes').get(gid, {})
             if not partes:
@@ -111,7 +111,7 @@ def register_owner_handlers(bot: TeleBot):
             save('sorteo', sorteos)
             return bot.send_message(uid, f"🔁 Sorteo de {gid} reiniciado.")
 
-        # 🗑️ Borrar lista
+        # 🗑️ Borrar lista de sorteo
         if text == "🗑️ Borrar lista de sorteo":
             sorteos = load('sorteo')
             if gid in sorteos:
@@ -122,8 +122,7 @@ def register_owner_handlers(bot: TeleBot):
 
         # ⏰ Agendar sorteo
         if text == "⏰ Agendar sorteo":
-            bot.send_message(
-                uid,
+            bot.send_message(uid,
                 "⏰ *Agendar Sorteo*\n"
                 "✏️ Envía fecha y hora en formato `YYYY-MM-DD_HH:MM`.\n"
                 "_Se usará la zona horaria configurada para el grupo._",
@@ -134,103 +133,83 @@ def register_owner_handlers(bot: TeleBot):
                 process_schedule
             )
 
-        # 🌐 Cambiar zona horaria: mostramos macrozonas
+        # 🌐 Cambiar zona horaria — Paso 1: macro-zona
         if text == "🌐 Cambiar zona horaria":
-            kb1 = ReplyKeyboardMarkup(resize_keyboard=True)
-            for macro in _MACROZONAS.keys():
-                kb1.add(KeyboardButton(macro))
-            kb1.add(KeyboardButton("🔙 Salir"))
-            return bot.send_message(
-                uid,
+            kb = ReplyKeyboardMarkup(resize_keyboard=True)
+            # Ponemos 3 botones por fila
+            macro_list = list(MACROZONES.keys()) + ["Atrás"]
+            for i in range(0, len(macro_list), 3):
+                kb.row(*(KeyboardButton(name) for name in macro_list[i:i+3]))
+            bot.send_message(uid,
                 "🌐 *Cambiar Zona Horaria*\n"
-                "Selecciona macrozona:",
+                "Selecciona primero la _macro-zona_:",
                 parse_mode='Markdown',
-                reply_markup=kb1
+                reply_markup=kb
             )
+            return bot.register_next_step_handler(bot.send_message(uid, "Elige: Africa, America, ..."), process_macrozone)
 
-        # Nivel 2: selección de macrozona
-        if text in _MACROZONAS:
-            zonas = _MACROZONAS[text]
-            kb2 = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-            for tz in zonas[:12]:
-                kb2.add(KeyboardButton(tz))
-            # si hay más, los agrupamos en otra página
-            if len(zonas) > 12:
-                kb2.add(KeyboardButton("Más…"))
-            kb2.add(KeyboardButton("🔙 Salir"))
-            # guardamos la lista completa en user_data
-            bot.user_data[uid + "_tz_list"] = zonas
-            bot.user_data[uid + "_tz_page"] = 0
-            return bot.send_message(
-                uid,
-                f"⏱ *{text}*: selecciona tu zona horaria:",
-                parse_mode='Markdown',
-                reply_markup=kb2
-            )
+    # --- Maneja selección de macro-zona ---
+    def process_macrozone(msg):
+        uid   = msg.from_user.id
+        macro = msg.text.strip()
+        if macro == "Atrás":
+            return handle_owner_selection(msg)  # vuelve al menú principal
+        if macro not in MACROZONES:
+            return bot.reply_to(msg, "⚠️ Macro-zona inválida. Elige una de la lista.")
+        # guarda macro en contexto
+        bot.user_data[uid]['macro'] = macro
+        # construye teclado de zonas (3xN)
+        tzs = MACROZONES[macro]
+        kb = ReplyKeyboardMarkup(resize_keyboard=True)
+        for i in range(0, len(tzs), 3):
+            kb.row(*(KeyboardButton(t) for t in tzs[i:i+3]))
+        kb.add(KeyboardButton("Atrás"))
+        bot.send_message(uid,
+            f"🌐 *{macro}* — selecciona tu zona:",
+            parse_mode='Markdown',
+            reply_markup=kb
+        )
+        return bot.register_next_step_handler(bot.send_message(uid, "Elige por ejemplo: America/Havana"), process_specific_zone)
 
-        # Paginación “Más…” de zonas
-        if text == "Más…" and bot.user_data.get(uid + "_tz_list"):
+    # --- Maneja selección de zona final ---
+    def process_specific_zone(msg):
+        uid  = msg.from_user.id
+        text = msg.text.strip()
+        ctx  = bot.user_data.get(uid, {})
+        gid  = ctx.get('group')
+        macro= ctx.get('macro')
+        if text == "Atrás":
+            return handle_owner_selection(msg)  # regresa al menú principal
+        if not macro or text not in MACROZONES.get(macro, []):
+            return bot.reply_to(msg, "⚠️ Zona inválida. Elige una de la lista.")
+        # guarda en grupos.json
+        grupos = load('grupos')
+        grupos[gid]['timezone'] = text
+        save('grupos', grupos)
+        bot.send_message(uid,
+            f"✅ Zona de `{gid}` actualizada a *{text}*.",
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
+        )
 
-            zonas = bot.user_data[uid + "_tz_list"]
-            page = bot.user_data.get(uid + "_tz_page", 0) + 1
-            start = page * 12
-            kb3 = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-            for tz in zonas[start:start + 12]:
-                kb3.add(KeyboardButton(tz))
-            if start + 12 < len(zonas):
-                kb3.add(KeyboardButton("Más…"))
-            kb3.add(KeyboardButton("🔙 Salir"))
-            bot.user_data[uid + "_tz_page"] = page
-            return bot.send_message(
-                uid,
-                "🔄 *Siguiente listado de zonas:*",
-                parse_mode='Markdown',
-                reply_markup=kb3
-            )
-
-        # Nivel 3: selección concreta de zona
-        if text in available_timezones():
-            try:
-                # aplicamos la zona
-                Zona = text
-                grupos = load('grupos')
-                grupos[bot.user_data[uid]]['timezone'] = Zona
-                save('grupos', grupos)
-                return bot.send_message(
-                    uid,
-                    f"✅ Zona de `{bot.user_data[uid]}` actualizada a *{Zona}*.",
-                    parse_mode='Markdown',
-                    reply_markup=ReplyKeyboardRemove()
-                )
-            except Exception:
-                return bot.send_message(
-                    uid,
-                    "❌ Error guardando la zona. Intenta de nuevo.",
-                    parse_mode='Markdown'
-                )
-
-    # ----------------- Helpers internos -----------------
-
+    # --- Función que dispara el sorteo programado ---
     def process_schedule(msg):
-        uid = msg.from_user.id
-        gid = bot.user_data.get(uid)
+        uid  = msg.from_user.id
+        ctx  = bot.user_data.get(uid, {})
+        gid  = ctx.get('group')
         text = msg.text.strip()
         try:
-            from datetime import datetime
             dt = datetime.strptime(text, "%Y-%m-%d_%H:%M")
-            grp = load('grupos').get(gid, {})
-            tzname = grp.get('timezone', 'UTC')
+            tzname = load('grupos').get(gid, {}).get('timezone', 'UTC')
             dt = dt.replace(tzinfo=ZoneInfo(tzname))
             schedule_raffle(bot, gid, dt)
-            return bot.send_message(
-                uid,
+            bot.send_message(uid,
                 f"✅ Sorteo programado para *{dt.strftime('%Y-%m-%d %H:%M')}* ({tzname}).",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
         except Exception:
-            return bot.reply_to(
-                msg,
-                "❌ Formato inválido o zona no configurada.\nUsa `YYYY-MM-DD_HH:MM`.",
+            bot.reply_to(msg,
+                "❌ Formato inválido. Usa `YYYY-MM-DD_HH:MM` y asegúrate de tener zona.",
                 parse_mode='Markdown'
-            )
+        )
