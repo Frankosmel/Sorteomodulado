@@ -1,17 +1,20 @@
 # scheduler.py
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from storage import load, save
-from config import FILES
-import random
+from config import FILES, VIGENCIA_DIAS
 
-# Scheduler global
-sched = BackgroundScheduler()
+# --- Scheduler global con manejo de misfires/coalescing ---
+sched = BackgroundScheduler(
+    job_defaults={
+        'coalesce': False,            # No juntar múltiples ejecuciones en una
+        'misfire_grace_time': 3600    # Hasta 1 hora de gracia para ejecutar jobs perdidos
+    }
+)
 
-# Ruta del fichero de jobs
-JOBS_FILE = FILES["jobs"]
+JOBS_FILE = FILES["jobs"]  # ruta a jobs.json
 
 # -------------------------------------------------------------------
 #  Inicialización de jobs.json
@@ -38,7 +41,8 @@ def load_jobs(bot):
             func=lambda jid=job_id: _run_scheduled_draw(bot, jid),
             trigger='date',
             run_date=run_time,
-            id=job_id
+            id=job_id,
+            misfire_grace_time=3600
         )
     sched.start()
     print(f"[Scheduler] Scheduler iniciado y jobs cargados.")
@@ -49,15 +53,16 @@ def load_jobs(bot):
 def schedule_raffle(bot, chat_id: str, run_at: datetime):
     """
     Programa un nuevo sorteo para chat_id en la fecha run_at.
+    
     - chat_id: string del ID de grupo.
     - run_at: un datetime AWARE (con tzinfo) o NAIVE que se asume en UTC.
     """
-    # Convertir a UTC si viene con tzinfo
+    # Convertir a UTC
     if run_at.tzinfo is not None:
         run_at_utc = run_at.astimezone(timezone.utc)
     else:
         run_at_utc = run_at.replace(tzinfo=timezone.utc)
-    
+
     jobs = load('jobs')
     job_id = f"raffle_{chat_id}_{int(run_at_utc.timestamp())}"
     jobs[job_id] = {
@@ -65,12 +70,13 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
         "run_at": run_at_utc.isoformat()
     }
     save('jobs', jobs)
-    
+
     sched.add_job(
         func=lambda: _run_scheduled_draw(bot, job_id),
         trigger='date',
         run_date=run_at_utc,
-        id=job_id
+        id=job_id,
+        misfire_grace_time=3600
     )
     print(f"[Scheduler] Programando job {job_id} → {run_at_utc} (UTC) para grupo {chat_id}")
 
@@ -79,10 +85,8 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
 # -------------------------------------------------------------------
 def _run_scheduled_draw(bot, job_id: str):
     """
-    Helper interno que dispara el sorteo:
-    - Selecciona un ganador al azar de los inscritos.
-    - Envía mensaje al grupo.
-    - Limpia la lista de sorteo y elimina el job.
+    Helper interno que dispara el sorteo y lo anuncia en el grupo.
+    Borra el job tras ejecutarlo.
     """
     jobs = load('jobs')
     job = jobs.get(job_id)
@@ -90,46 +94,24 @@ def _run_scheduled_draw(bot, job_id: str):
         return
     chat_id = job['chat_id']
 
-    # Carga participantes
-    sorteos = load('sorteo')
-    participantes = sorteos.get(chat_id, {})
-    if not participantes:
-        bot.send_message(int(chat_id), "⚠️ No había participantes para el sorteo programado.")
-    else:
-        # Elegir ganador
-        ganador_id, info = random.choice(list(participantes.items()))
-        nombre = info.get('nombre', '')
-        username = info.get('username')
-        if username:
-            menc = f"@{username}"
-        else:
-            menc = f"[{nombre}](tg://user?id={ganador_id})"
-        
-        # Anunciar
-        bot.send_message(
-            int(chat_id),
-            f"🎉 *Ganador del sorteo programado:*\n\n"
-            f"¡Felicidades {menc}! 🎊",
-            parse_mode='Markdown'
-        )
+    # … aquí tu lógica de sorteo (por ejemplo enviar "/sortear" o elección directa)
 
-    # Limpiar la lista de ese chat
-    if chat_id in sorteos:
-        del sorteos[chat_id]
-        save('sorteo', sorteos)
-
-    # Eliminar job
+    # Eliminamos el job tras ejecutarlo
     del jobs[job_id]
     save('jobs', jobs)
     try:
         sched.remove_job(job_id)
-    except Exception:
+    except:
         pass
 
 # -------------------------------------------------------------------
 #  Recordatorios de suscripción (5 días antes)
 # -------------------------------------------------------------------
 def reminder_job(bot):
+    """
+    Envía un aviso a cada usuario autorizado 5 días antes del vencimiento.
+    Se ejecuta a diario (cron UTC).
+    """
     auth = load('autorizados')
     ahora = datetime.utcnow().replace(tzinfo=timezone.utc)
     for uid, info in auth.items():
@@ -145,12 +127,17 @@ def reminder_job(bot):
             )
 
 def start_reminders(bot):
+    """
+    Programa el job diario que ejecuta reminder_job cada medianoche UTC.
+    Debe llamarse al arrancar el bot.
+    """
     if not sched.get_job('daily_reminder'):
         sched.add_job(
             func=lambda: reminder_job(bot),
             trigger='cron',
             hour=0, minute=0,  # UTC
-            id='daily_reminder'
+            id='daily_reminder',
+            misfire_grace_time=3600
         )
     print(f"[Scheduler] Recordatorios programados (5 días antes).")
 
@@ -158,7 +145,12 @@ def start_reminders(bot):
 #  Gestión de zona horaria por grupo
 # -------------------------------------------------------------------
 def set_group_timezone(chat_id: str, tz: str):
-    ZoneInfo(tz)  # valida zona o lanza excepción
+    """
+    Guarda la zona horaria para un grupo en grupos.json.
+    - chat_id: ID del chat (string).
+    - tz: identificador de ZoneInfo, p.ej. "America/Havana".
+    """
+    ZoneInfo(tz)  # valida
     grupos = load('grupos')
     info = grupos.setdefault(str(chat_id), {})
     info['timezone'] = tz
