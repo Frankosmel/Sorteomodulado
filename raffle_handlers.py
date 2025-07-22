@@ -1,11 +1,12 @@
 # raffle_handlers.py
 
+import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from telebot import TeleBot
 from storage import load, save
 from config import FILES
 from scheduler import schedule_raffle
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 def register_referral_handlers(bot: TeleBot):
     """
@@ -14,7 +15,7 @@ def register_referral_handlers(bot: TeleBot):
     """
     @bot.message_handler(content_types=['new_chat_members'])
     def handle_referrals(msg):
-        chat_id = str(msg.chat.id)
+        chat_id       = str(msg.chat.id)
         participantes = load('participantes')
         invitaciones  = load('invitaciones')
         participantes.setdefault(chat_id, {})
@@ -34,11 +35,10 @@ def register_referral_handlers(bot: TeleBot):
         save('participantes', participantes)
         save('invitaciones', invitaciones)
 
-
 def register_raffle_handlers(bot: TeleBot):
     """
     Manejadores para inscribir usuarios en sorteos, listar participantes,
-    ranking y programación de sorteos.
+    ranking, sorteo inmediato y programación de sorteos.
     """
     @bot.message_handler(commands=['addsorteo'])
     def addsorteo(msg):
@@ -119,8 +119,14 @@ def register_raffle_handlers(bot: TeleBot):
                 texto += f"• @{info['username']} — {info['nombre']}\n"
             else:
                 texto += f"• {info['nombre']} — ID: {uid}\n"
-
         bot.reply_to(msg, texto, parse_mode='Markdown')
+
+    @bot.message_handler(commands=['sortear'])
+    def cmd_sortear(msg):
+        """
+        Ejecuta un sorteo inmediato: elige ganador y lo anuncia.
+        """
+        perform_raffle(bot, str(msg.chat.id))
 
     @bot.message_handler(commands=['agendar_sorteo'])
     def agendar_sorteo(msg):
@@ -132,7 +138,8 @@ def register_raffle_handlers(bot: TeleBot):
         chat_id = str(msg.chat.id)
         text    = msg.text.partition(' ')[2].strip()
         if not text:
-            bot.reply_to(msg,
+            bot.reply_to(
+                msg,
                 "❌ Formato inválido.\n"
                 "Uso: `/agendar_sorteo YYYY-MM-DD_HH:MM`",
                 parse_mode='Markdown'
@@ -143,7 +150,8 @@ def register_raffle_handlers(bot: TeleBot):
         try:
             dt_naive = datetime.strptime(text, "%Y-%m-%d_%H:%M")
         except ValueError:
-            return bot.reply_to(msg,
+            return bot.reply_to(
+                msg,
                 "❌ Fecha u hora no válidas.\n"
                 "Asegúrate de usar `YYYY-MM-DD_HH:MM`.",
                 parse_mode='Markdown'
@@ -155,7 +163,8 @@ def register_raffle_handlers(bot: TeleBot):
         try:
             tz = ZoneInfo(tz_name)
         except Exception:
-            return bot.reply_to(msg,
+            return bot.reply_to(
+                msg,
                 f"❌ Zona horaria `{tz_name}` inválida o no configurada.\n"
                 "Usa `/misgrupos` → Cambiar zona para ajustar.",
                 parse_mode='Markdown'
@@ -166,7 +175,42 @@ def register_raffle_handlers(bot: TeleBot):
 
         # Programar sorteo
         schedule_raffle(bot, chat_id, run_at)
-        bot.reply_to(msg,
+        bot.reply_to(
+            msg,
             f"✅ Sorteo programado para *{run_at.strftime('%Y-%m-%d %H:%M')}* ({tz_name}).",
             parse_mode='Markdown'
-                    )
+        )
+
+def perform_raffle(bot: TeleBot, chat_id: str):
+    """
+    Ejecuta un sorteo inmediato para el chat dado:
+    - Carga participantes de FILES['sorteo']
+    - Elige un ganador al azar
+    - Anuncia al ganador con un mensaje festivo
+    - Limpia la lista de inscritos
+    """
+    sorteos_all = load('sorteo')
+    sorteos     = sorteos_all.get(chat_id, {})
+    if not sorteos:
+        bot.send_message(int(chat_id), "ℹ️ No hay participantes para el sorteo.")
+        return
+
+    # Elegimos un ganador
+    winner_id = random.choice(list(sorteos.keys()))
+    info      = sorteos[winner_id]
+    nombre    = info.get('nombre', 'Usuario')
+    username  = info.get('username')
+    mention   = f"@{username}" if username else nombre
+
+    # Mensaje bonito de anuncio
+    texto = (
+        "🎊 *¡Ha llegado el gran momento!* 🎊\n\n"
+        f"🥳 ¡Felicidades {mention}! 🥳\n\n"
+        "Has sido seleccionado como ganador del sorteo.\n"
+        "¡Gracias por participar y suerte en la próxima!"
+    )
+    bot.send_message(int(chat_id), texto, parse_mode='Markdown')
+
+    # Limpiamos la lista de inscritos
+    del sorteos_all[chat_id]
+    save('sorteo', sorteos_all)
