@@ -5,79 +5,67 @@ from storage import load, save
 from config import VIGENCIA_DIAS
 
 def is_valid(user_id: int) -> bool:
-    """
-    Comprueba si un usuario está autorizado y su suscripción no ha vencido.
-    
-    :param user_id: ID de Telegram del usuario.
-    :return: True si existe en autorizados.json y hoy <= fecha de vencimiento.
-    """
+    """True si el usuario está autorizado y su plan no ha vencido."""
     auth = load('autorizados')
     info = auth.get(str(user_id))
     if not info:
         return False
-    try:
-        exp = datetime.fromisoformat(info['vence'])
-    except Exception:
-        return False
+    exp = datetime.fromisoformat(info['vence'])
     return datetime.utcnow() <= exp
 
-def add_authorized(user_id: int, activado_por: int) -> None:
+def add_authorized(user_id: int, username: str, plan: str):
     """
-    Añade un usuario al listado de autorizados con fecha de vencimiento y registro.
-    
-    :param user_id: ID de Telegram a autorizar.
-    :param activado_por: ID de quien realiza la autorización.
+    Registra un nuevo usuario autorizado.
+    - user_id: ID de Telegram
+    - username: @usuario
+    - plan: nombre de plan (Básico, Dúo, Trío, Trimestre Básico, …)
     """
     auth = load('autorizados')
     now = datetime.utcnow()
-    vence = now + timedelta(days=VIGENCIA_DIAS)
+    exp = now + timedelta(days=VIGENCIA_DIAS if "1 mes" in plan else VIGENCIA_DIAS*3)
     auth[str(user_id)] = {
-        'activado_por': activado_por,
-        'pago': now.date().isoformat(),
-        'vence': vence.isoformat()
+        'nombre':    username,
+        'username':  username,
+        'plan':      plan,
+        'pago':      now.date().isoformat(),
+        'vence':     exp.isoformat()
     }
     save('autorizados', auth)
 
 def remove_authorized(user_id: int) -> bool:
-    """
-    Elimina un usuario del listado de autorizados.
-    
-    :param user_id: ID de Telegram a desautorizar.
-    :return: True si existía y fue eliminado, False si no estaba.
-    """
+    """Quita la autorización; devuelve True si existía."""
     auth = load('autorizados')
-    uid = str(user_id)
-    if uid in auth:
-        del auth[uid]
+    if str(user_id) in auth:
+        del auth[str(user_id)]
         save('autorizados', auth)
         return True
     return False
 
 def list_authorized() -> dict:
-    """
-    Devuelve el diccionario completo de autorizados.
-    
-    Cada clave es el user_id (str) y el valor un dict con:
-      - activado_por: quien autorizó
-      - pago: fecha ISO de activación
-      - vence: fecha ISO de vencimiento
-    
-    :return: contenido de autorizados.json
-    """
+    """Devuelve el dict completo de autorizados."""
     return load('autorizados')
 
-def register_group(chat_id: int, activado_por: int) -> None:
+def register_group(chat_id: int, added_by: int):
     """
-    Registra que un usuario activó el bot en un grupo.
-    
-    :param chat_id: ID del chat/grupo.
-    :param activado_por: ID del usuario que autorizó el grupo.
+    Registra el grupo si el usuario aún no supera su cuota.
+    Lanza ValueError si ya tiene el máximo de grupos.
     """
-    gr = load('grupos')
-    key = str(chat_id)
-    now = datetime.utcnow().date().isoformat()
-    gr.setdefault(key, {
-        'activado_por': activado_por,
-        'creado': now
+    auth = load('autorizados')
+    info = auth.get(str(added_by))
+    plan = info.get('plan', 'Básico')
+    # límites según plan
+    limites = {
+        'Básico': 1, 'Dúo': 2, 'Trío': 3,
+        'Trimestre Básico': 1, 'Trimestre Dúo': 2, 'Trimestre Trío': 3
+    }
+    max_grupos = limites.get(plan, 1)
+    grupos = load('grupos')
+    actuales = sum(1 for g in grupos.values() if g.get('activado_por') == added_by)
+    if actuales >= max_grupos:
+        raise ValueError("Límite de grupos alcanzado")
+    # registrar
+    grupos.setdefault(str(chat_id), {
+        'activado_por': added_by,
+        'creado':       datetime.utcnow().date().isoformat()
     })
-    save('grupos', gr)
+    save('grupos', grupos)
