@@ -3,6 +3,9 @@
 from telebot import TeleBot
 from storage import load, save
 from config import FILES
+from scheduler import schedule_raffle
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 def register_referral_handlers(bot: TeleBot):
     """
@@ -34,7 +37,8 @@ def register_referral_handlers(bot: TeleBot):
 
 def register_raffle_handlers(bot: TeleBot):
     """
-    Manejadores para inscribir usuarios en sorteos, listar participantes y ranking.
+    Manejadores para inscribir usuarios en sorteos, listar participantes,
+    ranking y programación de sorteos.
     """
     @bot.message_handler(commands=['addsorteo'])
     def addsorteo(msg):
@@ -80,9 +84,9 @@ def register_raffle_handlers(bot: TeleBot):
 
     @bot.message_handler(commands=['top'])
     def mostrar_top(msg):
-        chat_id      = str(msg.chat.id)
-        invitaciones = load('invitaciones').get(chat_id, {})
-        participantes= load('participantes').get(chat_id, {})
+        chat_id       = str(msg.chat.id)
+        invitaciones  = load('invitaciones').get(chat_id, {})
+        participantes = load('participantes').get(chat_id, {})
 
         if not invitaciones:
             bot.reply_to(msg, "📉 Aún nadie ha invitado a otros miembros.")
@@ -117,3 +121,52 @@ def register_raffle_handlers(bot: TeleBot):
                 texto += f"• {info['nombre']} — ID: {uid}\n"
 
         bot.reply_to(msg, texto, parse_mode='Markdown')
+
+    @bot.message_handler(commands=['agendar_sorteo'])
+    def agendar_sorteo(msg):
+        """
+        Programa un sorteo en el futuro. Uso:
+          /agendar_sorteo YYYY-MM-DD_HH:MM
+        Se interpretará en la zona horaria del grupo (o UTC si no está configurada).
+        """
+        chat_id = str(msg.chat.id)
+        text    = msg.text.partition(' ')[2].strip()
+        if not text:
+            bot.reply_to(msg,
+                "❌ Formato inválido.\n"
+                "Uso: `/agendar_sorteo YYYY-MM-DD_HH:MM`",
+                parse_mode='Markdown'
+            )
+            return
+
+        # Parsear fecha y hora
+        try:
+            dt_naive = datetime.strptime(text, "%Y-%m-%d_%H:%M")
+        except ValueError:
+            return bot.reply_to(msg,
+                "❌ Fecha u hora no válidas.\n"
+                "Asegúrate de usar `YYYY-MM-DD_HH:MM`.",
+                parse_mode='Markdown'
+            )
+
+        # Obtener zona del grupo
+        grp_info = load('grupos').get(chat_id, {})
+        tz_name  = grp_info.get('timezone', 'UTC')
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            return bot.reply_to(msg,
+                f"❌ Zona horaria `{tz_name}` inválida o no configurada.\n"
+                "Usa `/misgrupos` → Cambiar zona para ajustar.",
+                parse_mode='Markdown'
+            )
+
+        # Generar datetime con zona
+        run_at = dt_naive.replace(tzinfo=tz)
+
+        # Programar sorteo
+        schedule_raffle(bot, chat_id, run_at)
+        bot.reply_to(msg,
+            f"✅ Sorteo programado para *{run_at.strftime('%Y-%m-%d %H:%M')}* ({tz_name}).",
+            parse_mode='Markdown'
+                    )
