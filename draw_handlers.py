@@ -1,77 +1,55 @@
 # draw_handlers.py
 
-import random
-from datetime import datetime
 from telebot import TeleBot
+from datetime import datetime
+import random
 from storage import load, save
-from template_handlers import render_template
+from config import FILES
 
-def register_draw_handlers(bot: TeleBot):
+def do_draw(bot: TeleBot, chat_id: str):
     """
-    Manejadores relacionados con la ejecución de sorteos:
-      - do_draw: función interna que efectúa el sorteo.
-      - /sortear: comando manual para disparar el sorteo al instante.
+    Realiza el sorteo en el chat indicado:
+    1. Selecciona un ganador al azar de los inscritos.
+    2. Envía mensaje de felicitación con mención e ID.
+    3. Registra el resultado en historial.json.
+    4. Vacía la lista de participantes para futuros sorteos.
     """
+    chat_key = str(chat_id)
+    sorteos = load('sorteo')
+    participantes = sorteos.get(chat_key, {})
 
-    def do_draw(chat_id: int):
-        """
-        Elige un ganador al azar entre los inscritos en el sorteo de `chat_id`,
-        envía el mensaje de ganador usando plantilla si existe o texto por defecto,
-        guarda al ganador en historial y limpia la lista de participantes.
-        """
-        chat_key = str(chat_id)
-        sorteos = load('sorteo')
-        inscritos = sorteos.get(chat_key, {})
+    # Si no hay inscritos
+    if not participantes:
+        bot.send_message(int(chat_id), "ℹ️ No hay participantes para el sorteo.")
+        return
 
-        if not inscritos:
-            return  # No hay participantes
+    # Elegir ganador
+    winner_id, info = random.choice(list(participantes.items()))
+    nombre   = info.get('nombre', 'Usuario')
+    username = info.get('username')
+    if username:
+        mention = f"@{username}"
+    else:
+        # enlace de mención por ID si no hay username
+        mention = f"[{nombre}](tg://user?id={winner_id})"
 
-        # Selección aleatoria
-        ganador_id, info = random.choice(list(inscritos.items()))
-        username = info.get('username')
-        nombre   = info.get('nombre', 'Usuario')
-        ganador_mention = f"@{username}" if username else f"[{nombre}](tg://user?id={ganador_id})"
+    # Anunciar ganador
+    texto = (
+        f"🎉 *¡Felicidades!* 🎉\n\n"
+        f"El ganador es {mention}\n"
+        f"— ID: `{winner_id}`"
+    )
+    bot.send_message(int(chat_id), texto, parse_mode='Markdown')
 
-        # Timestamp actual
-        ahora = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+    # Registrar en historial
+    historial = load('historial')
+    historial.setdefault(chat_key, [])
+    historial[chat_key].append({
+        "winner_id":  winner_id,
+        "timestamp":  datetime.utcnow().isoformat()
+    })
+    save('historial', historial)
 
-        # Renderizar mensaje usando plantilla 'winner' si existe
-        texto = render_template(
-            chat_id, 'winner',
-            USUARIO=ganador_mention,
-            CHAT=chat_id,
-            GANADOR=ganador_mention,
-            FECHA=ahora
-        ) or f"🎉 ¡Felicidades {ganador_mention}! Has sido el ganador del sorteo."
-
-        # Enviar mensaje al grupo
-        bot.send_message(chat_id, texto, parse_mode='Markdown')
-
-        # Registrar en historial
-        historial = load('historial')
-        historial.setdefault(chat_key, []).append({
-            "ganador_id":     ganador_id,
-            "nombre":         nombre,
-            "username":       username,
-            "fecha_utc":      ahora
-        })
-        save('historial', historial)
-
-        # Limpiar lista de inscritos para próximos sorteos
-        sorteos[chat_key] = {}
-        save('sorteo', sorteos)
-
-
-    @bot.message_handler(commands=['sortear'])
-    def cmd_sortear(msg):
-        """
-        Sorteo manual inmediato:
-          /sortear
-        Solo dispara do_draw para el chat actual.
-        """
-        chat_id = msg.chat.id
-        do_draw(chat_id)
-
-
-    # Exponer la función interna para el scheduler
-    bot.do_draw = do_draw
+    # Vaciar lista de participantes
+    sorteos[chat_key] = {}
+    save('sorteo', sorteos)
