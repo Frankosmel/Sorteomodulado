@@ -1,8 +1,12 @@
+# scheduler.py
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from storage import load, save
 from config import FILES, VIGENCIA_DIAS
+# IMPORTAMOS la lógica de sorteo directo
+from raffle_handlers import _perform_draw
 
 # Scheduler global
 sched = BackgroundScheduler()
@@ -50,10 +54,8 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
     
     - chat_id: string del ID de grupo.
     - run_at: un datetime AWARE (con tzinfo) o NAIVE que se asume en UTC.
-    
-    La llamada típica vendrá de owner_handlers después de parsear la zona local.
     """
-    # Convierte a UTC si viene con ZoneInfo
+    # Convertir a UTC si viene con tzinfo
     if run_at.tzinfo is not None:
         run_at_utc = run_at.astimezone(timezone.utc)
     else:
@@ -82,18 +84,19 @@ def schedule_raffle(bot, chat_id: str, run_at: datetime):
 # -------------------------------------------------------------------
 def _run_scheduled_draw(bot, job_id: str):
     """
-    Helper interno que dispara el sorteo y lo anuncia en el grupo.
-    Borra el job tras ejecutarlo.
+    Helper interno que dispara el sorteo y lo anuncia en el grupo,
+    ELIGIENDO directamente al ganador y borrando el job.
     """
     jobs = load('jobs')
     job = jobs.get(job_id)
     if not job:
         return
     chat_id = job['chat_id']
-    # Anunciamos
-    bot.send_message(int(chat_id), "⏳ ¡Comienza el sorteo programado!")
-    bot.send_message(int(chat_id), "/sortear")
-    # Eliminamos del scheduler y del JSON
+
+    # Ejecutamos el sorteo (elige ganador y vacía la lista)
+    _perform_draw(bot, chat_id)
+
+    # Eliminamos el job tras ejecutarlo
     del jobs[job_id]
     save('jobs', jobs)
     try:
@@ -129,7 +132,7 @@ def start_reminders(bot):
     Programa el job diario que ejecuta reminder_job cada medianoche UTC.
     Debe llamarse al arrancar el bot.
     """
-    # Evitamos duplicar si ya existe
+    # Evitamos duplicar la tarea si ya existe
     if not sched.get_job('daily_reminder'):
         sched.add_job(
             func=lambda: reminder_job(bot),
@@ -148,8 +151,8 @@ def set_group_timezone(chat_id: str, tz: str):
     - chat_id: ID del chat (string).
     - tz: identificador de ZoneInfo, p.ej. "America/Havana".
     """
-    # valida la zona
-    ZoneInfo(tz)  # lanzará excepción si inválido
+    # valida la zona (lanzará excepción si inválida)
+    ZoneInfo(tz)
     grupos = load('grupos')
     info = grupos.setdefault(str(chat_id), {})
     info['timezone'] = tz
