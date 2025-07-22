@@ -2,67 +2,55 @@
 
 import random
 from telebot import TeleBot
-from telebot.types import ReplyKeyboardRemove
+from telebot.types import Message
 from storage import load, save
 from config import FILES
 
-def register_draw_handlers(bot: TeleBot):
+def do_draw(bot: TeleBot):
     """
-    Registra, en el privado del bot, la opción de 'Sortear ahora' para
-    elegir instantáneamente un ganador de un sorteo ya inscrito en un grupo,
-    y limpia la lista tras el sorteo.
+    Registra en el bot el comando /sortear:
+    - Lee los participantes del grupo.
+    - Elige uno al azar.
+    - Envía un mensaje anunciando al ganador.
     """
+    @bot.message_handler(commands=['sortear'])
+    def handle_sortear(msg: Message):
+        chat_id = str(msg.chat.id)
+        sorteos = load('sorteo').get(chat_id, {})
 
-    @bot.message_handler(func=lambda m: m.chat.type == 'private' and m.text == "🎲 Sortear ahora")
-    def handle_manual_draw(msg):
-        uid = msg.from_user.id
-        # Identificar el grupo activo que gestiona este owner
-        gid = getattr(bot, 'user_data', {}).get(uid)
-        if not gid:
+        # Si no hay participantes
+        if not sorteos:
             return bot.reply_to(
                 msg,
-                "⚠️ No has seleccionado aún un grupo. Usa “👥 Mis Grupos” y luego “Gestionar <ID>”."
+                "ℹ️ *No hay participantes en el sorteo.*",
+                parse_mode='Markdown'
             )
 
-        # Carga los participantes del sorteo para ese grupo
-        sorteos = load('sorteo').get(gid, {})
-        if not sorteos:
-            return bot.send_message(
-                uid,
-                "ℹ️ No hay participantes en el sorteo de ese grupo."
-            )
-
-        # Elegir ganador aleatorio
-        ganador_id, info = random.choice(list(sorteos.items()))
-        nombre = info.get('nombre', 'Usuario')
+        # Elegir ganador
+        user_id, info = random.choice(list(sorteos.items()))
+        nombre   = info.get('nombre', 'Usuario')
         username = info.get('username')
-        mention = f"@{username}" if username else nombre
+        # Formatear mención
+        if username:
+            mention = f"@{username}"
+        else:
+            mention = f"[{nombre}](tg://user?id={user_id})"
 
-        # Anunciar ganador en el grupo
+        # Mensaje “bonito” de anuncio
+        text = (
+            "🎉 *¡SORTEO FINALIZADO!* 🎉\n\n"
+            f"👉 El ganador de este sorteo es: {mention}\n\n"
+            "¡Felicidades! 🏆\n"
+            "_Gracias a todos por participar._"
+        )
+
         bot.send_message(
-            int(gid),
-            (
-                "🎉 *Resultado del Sorteo* 🎉\n\n"
-                f"🥳 ¡Felicidades {mention}! 🎊\n\n"
-                "Gracias a todos por participar."
-            ),
+            msg.chat.id,
+            text,
             parse_mode='Markdown'
         )
 
-        # Limpiar la lista de ese grupo
-        todos = load('sorteo')
-        todos[gid] = {}
-        save('sorteo', todos)
-
-        # Notificar al owner en privado
-        bot.send_message(
-            uid,
-            f"✅ Sorteo manual para el grupo `{gid}` realizado.",
-            parse_mode='Markdown',
-            reply_markup=ReplyKeyboardRemove()
-        )
-
-    # --- Integrar el botón "🎲 Sortear ahora" en el submenú de owner ---
-    # Asumimos que owner_handlers genera un ReplyKeyboardMarkup que incluya:
-    #     KeyboardButton("🎲 Sortear ahora")
-    # junto a "⏰ Agendar sorteo" y otros.
+        # Opcional: vaciar lista para el siguiente sorteo
+        sorteos_all = load('sorteo')
+        sorteos_all[chat_id] = {}
+        save('sorteo', sorteos_all)
