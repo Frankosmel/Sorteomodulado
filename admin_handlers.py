@@ -19,13 +19,21 @@ def _escape_md(text: str) -> str:
     """
     Escapa caracteres especiales de Markdown en `text`.
     """
-    return re.sub(r'([_*\\()~`>#+=|{}.!-])', r'\\\1', text)
+    return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', text)
 
 def show_admin_menu(bot: TeleBot, chat_id: int):
     """Envía el teclado principal de admin a `chat_id`."""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.row(KeyboardButton("Autorizados"), KeyboardButton("Autorizar"), KeyboardButton("Desautorizar"))
-    kb.row(KeyboardButton("Vencimientos"),   KeyboardButton("Grupos"),    KeyboardButton("Mensajes"))
+    kb.row(
+        KeyboardButton("Autorizados"),
+        KeyboardButton("Autorizar"),
+        KeyboardButton("Desautorizar")
+    )
+    kb.row(
+        KeyboardButton("Vencimientos"),
+        KeyboardButton("Grupos"),
+        KeyboardButton("Mensajes")
+    )
     kb.row(KeyboardButton("Salir"))
     bot.send_message(
         chat_id,
@@ -38,7 +46,11 @@ def register_admin_handlers(bot: TeleBot):
     @bot.message_handler(commands=['admin'])
     def admin_panel(msg):
         if msg.chat.type != 'private' or msg.from_user.id not in ADMINS:
-            return bot.reply_to(msg, "⛔ *Acceso denegado.* Usa /admin en privado.", parse_mode='Markdown')
+            return bot.reply_to(
+                msg,
+                "⛔ *Acceso denegado.* Usa /admin en privado.",
+                parse_mode='Markdown'
+            )
         show_admin_menu(bot, msg.chat.id)
 
     @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
@@ -50,7 +62,8 @@ def register_admin_handlers(bot: TeleBot):
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
         if text == "Autorizados":
-            bot.send_message(uid,
+            bot.send_message(
+                uid,
                 "📋 *Autorizados*: muestra todos los usuarios con acceso y su fecha de vencimiento.",
                 parse_mode='Markdown'
             )
@@ -66,9 +79,9 @@ def register_admin_handlers(bot: TeleBot):
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
         if text == "Autorizar":
-            bot.send_message(uid,
-                "➕ *Autorizar*: añade un nuevo usuario.\n"
-                "✏️ Envía: `ID,@usuario`",
+            bot.send_message(
+                uid,
+                "➕ *Autorizar*: añade un nuevo usuario.\n✏️ Envía: `ID,@usuario`",
                 parse_mode='Markdown'
             )
             return bot.register_next_step_handler(
@@ -77,9 +90,9 @@ def register_admin_handlers(bot: TeleBot):
             )
 
         if text == "Desautorizar":
-            bot.send_message(uid,
-                "➖ *Desautorizar*: quita acceso a un usuario.\n"
-                "✏️ Envía solo el `ID`.",
+            bot.send_message(
+                uid,
+                "➖ *Desautorizar*: quita acceso a un usuario.\n✏️ Envía solo el `ID`.",
                 parse_mode='Markdown'
             )
             return bot.register_next_step_handler(
@@ -88,7 +101,8 @@ def register_admin_handlers(bot: TeleBot):
             )
 
         if text == "Vencimientos":
-            bot.send_message(uid,
+            bot.send_message(
+                uid,
                 "⏳ *Vencimientos*: muestra cuántos días quedan a cada suscripción.",
                 parse_mode='Markdown'
             )
@@ -105,7 +119,8 @@ def register_admin_handlers(bot: TeleBot):
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
         if text == "Grupos":
-            bot.send_message(uid,
+            bot.send_message(
+                uid,
                 "🗂 *Grupos*: lista los chats donde el bot está activo y quién lo activó.",
                 parse_mode='Markdown'
             )
@@ -131,12 +146,26 @@ def register_admin_handlers(bot: TeleBot):
             )
 
         if text == "A autorizados":
-            bot.send_message(uid, "✏️ *Escribe el mensaje* que enviarás a todos los autorizados:", parse_mode='Markdown')
-            return bot.register_next_step_handler(bot.send_message(uid, "Ejemplo: ¡Recordatorio!"), send_to_authorized)
+            bot.send_message(
+                uid,
+                "✏️ *Escribe el mensaje* que enviarás a todos los autorizados:",
+                parse_mode='Markdown'
+            )
+            return bot.register_next_step_handler(
+                bot.send_message(uid, "Ejemplo: ¡Recordatorio!"),
+                send_to_authorized
+            )
 
         if text == "A grupos":
-            bot.send_message(uid, "✏️ *Escribe el mensaje* que enviarás a todos los grupos:", parse_mode='Markdown')
-            return bot.register_next_step_handler(bot.send_message(uid, "Ejemplo: Nuevo sorteo hoy!"), send_to_groups)
+            bot.send_message(
+                uid,
+                "✏️ *Escribe el mensaje* que enviarás a todos los grupos:",
+                parse_mode='Markdown'
+            )
+            return bot.register_next_step_handler(
+                bot.send_message(uid, "Ejemplo: Nuevo sorteo hoy!"),
+                send_to_groups
+            )
 
     def process_authorize(msg):
         uid = msg.from_user.id
@@ -146,7 +175,7 @@ def register_admin_handlers(bot: TeleBot):
         user_id = int(partes[0])
         username = partes[1]
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
-        kb = InlineKeyboardMarkup(row_width=1)
+        kb = InlineKeyboardMarkup(resize_keyboard=True, row_width=1)
         for plan in PLANS:
             kb.add(InlineKeyboardButton(plan['label'], callback_data=f"auth_plan_{plan['key']}"))
         bot.send_message(
@@ -162,11 +191,19 @@ def register_admin_handlers(bot: TeleBot):
         bot.answer_callback_query(cq.id)
         pending = PENDING_AUTH.get(admin_id)
         if not pending:
-            return bot.send_message(admin_id, "⚠️ *Sesión expirada.* Vuelve a Autorizar.", parse_mode='Markdown')
+            return bot.send_message(
+                admin_id,
+                "⚠️ *Sesión expirada.* Vuelve a Autorizar.",
+                parse_mode='Markdown'
+            )
         plan_key = cq.data.replace("auth_plan_", "")
         plan = next((p for p in PLANS if p["key"] == plan_key), None)
         if not plan:
-            return bot.send_message(admin_id, "❌ *Plan inválido.*", parse_mode='Markdown')
+            return bot.send_message(
+                admin_id,
+                "❌ *Plan inválido.*",
+                parse_mode='Markdown'
+            )
         days = plan.get("duration_days", VIGENCIA_DIAS)
         vence_date = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
 
@@ -176,13 +213,17 @@ def register_admin_handlers(bot: TeleBot):
         # Confirmación al admin
         bot.send_message(
             admin_id,
-            _escape_md(f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con {plan['label']} hasta {vence_date}."),
+            _escape_md(
+                f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con {plan['label']} hasta {vence_date}."
+            ),
             parse_mode='Markdown'
         )
         # Aviso al usuario
         bot.send_message(
             pending["user_id"],
-            _escape_md(f"🎉 Hola {pending['username']}! Tu suscripción {plan['label']} ha sido activada y vence el {vence_date}."),
+            _escape_md(
+                f"🎉 Hola {pending['username']}! Tu suscripción {plan['label']} ha sido activada y vence el {vence_date}."
+            ),
             parse_mode='Markdown'
         )
         del PENDING_AUTH[admin_id]
@@ -194,7 +235,12 @@ def register_admin_handlers(bot: TeleBot):
         user_id = int(msg.text)
         success = remove_authorized(user_id)
         texto = "desautorizado" if success else "no estaba autorizado"
-        bot.send_message(uid, f"🗑️ Usuario `{user_id}` {texto}.", parse_mode='Markdown', reply_markup=ReplyKeyboardRemove())
+        bot.send_message(
+            uid,
+            f"🗑️ Usuario `{user_id}` {texto}.",
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
+        )
 
     def send_to_authorized(msg):
         texto = msg.text
@@ -203,7 +249,11 @@ def register_admin_handlers(bot: TeleBot):
                 bot.send_message(int(k), texto)
             except:
                 pass
-        bot.send_message(msg.from_user.id, "✅ Mensaje enviado a todos los autorizados.", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(
+            msg.from_user.id,
+            "✅ Mensaje enviado a todos los autorizados.",
+            reply_markup=ReplyKeyboardRemove()
+        )
 
     def send_to_groups(msg):
         texto = msg.text
@@ -212,4 +262,8 @@ def register_admin_handlers(bot: TeleBot):
                 bot.send_message(int(chat_id), texto)
             except:
                 pass
-        bot.send_message(msg.from_user.id, "✅ Mensaje reenviado a todos los grupos.", reply_markup=ReplyKeyboardRemove())
+        bot.send_message(
+            msg.from_user.id,
+            "✅ Mensaje reenviado a todos los grupos.",
+            reply_markup=ReplyKeyboardRemove()
+            )
