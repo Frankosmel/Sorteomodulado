@@ -9,7 +9,7 @@ from telebot.types import (
 )
 from config import PLANS, PAYMENT_INFO, ADMINS, FILES
 from storage import load, save
-from datetime import datetime, timezone
+from datetime import datetime
 
 # Archivo donde guardaremos los recibos
 RECEIPTS_FILE = FILES["receipts"]
@@ -19,11 +19,11 @@ ADMIN_GROUP_ID = -1002605404513
 
 def register_payment_handlers(bot: TeleBot):
     """
-    Flujo completo de contratación de planes:
-      1) El usuario selecciona un plan (callback "plan_<key>")
-      2) Se muestran los métodos de pago ajustados con emojis e instrucciones
-      3) El usuario envía la captura + su @usuario
-      4) Se guarda el recibo y se notifica a cada super‐admin y al grupo de admins
+    Manejadores para flujo de contratación de planes:
+      1) El usuario toca un InlineKeyboardButton con callback_data="plan_<key>"
+      2) Se le muestran métodos de pago
+      3) Envía comprobante (foto o texto) + su @usuario
+      4) Se guarda recibo y se notifica a ADMINS y ADMIN_GROUP_ID
     """
 
     # 1) Usuario selecciona un plan
@@ -39,7 +39,7 @@ def register_payment_handlers(bot: TeleBot):
         bot.user_data = getattr(bot, 'user_data', {})
         bot.user_data[user_id] = {"plan": plan_key}
 
-        # Teclado con métodos de pago
+        # Mostramos opciones de método de pago
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(
             InlineKeyboardButton("💳 Pago con Tarjeta", callback_data="pay_tarjeta"),
@@ -47,13 +47,12 @@ def register_payment_handlers(bot: TeleBot):
             InlineKeyboardButton("🔙 Cancelar", callback_data="pay_cancel")
         )
 
-        # Editamos el mensaje del menú de planes
         bot.edit_message_text(
             chat_id=user_id,
             message_id=cq.message.message_id,
             text=(
                 f"🌟 *Has seleccionado:* {plan['label']}\n\n"
-                f"💰 *Monto a enviar:* `{plan['price']} CUP`\n\n"
+                f"💰 *Precio:* {plan['price']} CUP\n\n"
                 "Elige tu método de pago:"
             ),
             parse_mode='Markdown',
@@ -62,15 +61,14 @@ def register_payment_handlers(bot: TeleBot):
         bot.answer_callback_query(cq.id)
 
 
-    # 2) Cancelar contratación
+    # 2) Cancelar flujo
     @bot.callback_query_handler(func=lambda c: c.data == "pay_cancel")
     def on_pay_cancel(cq):
         uid = cq.from_user.id
         bot.answer_callback_query(cq.id)
         bot.send_message(
             uid,
-            "❌ *Contratación cancelada.*\n\n"
-            "Si cambias de opinión, vuelve a /start para escoger plan.",
+            "❌ *Contratación cancelada.*",
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
         )
@@ -85,11 +83,7 @@ def register_payment_handlers(bot: TeleBot):
         data = bot.user_data.get(uid, {})
         plan_key = data.get("plan")
         if not plan_key:
-            return bot.send_message(
-                uid,
-                "🚫 *Error interno.* Por favor vuelve a /start.",
-                parse_mode='Markdown'
-            )
+            return bot.send_message(uid, "🚫 *Error interno.* Vuelve a /start.", parse_mode='Markdown')
 
         plan = next(p for p in PLANS if p["key"] == plan_key)
         info = PAYMENT_INFO
@@ -97,13 +91,13 @@ def register_payment_handlers(bot: TeleBot):
         texto = (
             "💳 *Pago con Tarjeta*\n\n"
             f"• *Plan:* {plan['label']}\n"
-            f"• *Monto:* `{plan['price']} CUP`\n"
+            f"• *Monto:* {plan['price']} CUP\n"
             f"• *Tarjeta:* `{info['tarjeta']}`\n"
-            "• Envía el número de confirmación que recibas por SMS al número anterior.\n\n"
+            "• Envía el número de confirmación que recibas por SMS al número anterior (56246700).\n\n"
             "✏️ Ahora, por favor, *adjunta la captura* de la transferencia y tu *@usuario*."
         )
-        msg = bot.send_message(uid, texto, parse_mode='Markdown')
-        bot.register_next_step_handler(msg, process_receipt)
+        bot.send_message(uid, texto, parse_mode='Markdown')
+        bot.register_next_step_handler(cq.message, process_receipt)
 
 
     # 4) Pago por SMS / Saldo móvil
@@ -114,11 +108,7 @@ def register_payment_handlers(bot: TeleBot):
         data = bot.user_data.get(uid, {})
         plan_key = data.get("plan")
         if not plan_key:
-            return bot.send_message(
-                uid,
-                "🚫 *Error interno.* Por favor vuelve a /start.",
-                parse_mode='Markdown'
-            )
+            return bot.send_message(uid, "🚫 *Error interno.* Vuelve a /start.", parse_mode='Markdown')
 
         plan = next(p for p in PLANS if p["key"] == plan_key)
         info = PAYMENT_INFO
@@ -126,13 +116,12 @@ def register_payment_handlers(bot: TeleBot):
         texto = (
             "📱 *Pago por SMS o Saldo Móvil*\n\n"
             f"• *Plan:* {plan['label']}\n"
-            f"• *Monto:* `{plan['price']} CUP`\n"
-            f"• *Envía tu pago al número:* `{info['saldo_movil']}`\n"
-            "• Recibirás un SMS con un código de confirmación.\n\n"
+            f"• *Monto:* {plan['price']} CUP\n"
+            f"• Envía un SMS o usa saldo al número `{info['sms_num']}`.\n\n"
             "✏️ Ahora, por favor, *adjunta la captura* del SMS o comprobante y tu *@usuario*."
         )
-        msg = bot.send_message(uid, texto, parse_mode='Markdown')
-        bot.register_next_step_handler(msg, process_receipt)
+        bot.send_message(uid, texto, parse_mode='Markdown')
+        bot.register_next_step_handler(cq.message, process_receipt)
 
 
     # 5) Procesar recibo (foto o texto)
@@ -141,56 +130,53 @@ def register_payment_handlers(bot: TeleBot):
         data = bot.user_data.get(uid, {})
         plan_key = data.get("plan")
         if not plan_key:
-            return bot.reply_to(
-                msg,
-                "⚠️ *Sesión expirada.* Inicia de nuevo con /start.",
-                parse_mode='Markdown'
-            )
+            return bot.reply_to(msg, "⚠️ *Sesión expirada.* Inicia de nuevo con /start.", parse_mode='Markdown')
 
-        # Cargamos y guardamos el recibo
+        # Cargar recibos y agregar
         receipts = load('receipts')
-        now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        now = datetime.utcnow().isoformat()
         entry = {
-            "user_id":     uid,
-            "plan_key":    plan_key,
-            "plan_label":  next(p['label'] for p in PLANS if p['key']==plan_key),
-            "plan_price":  f"{next(p['price'] for p in PLANS if p['key']==plan_key)} CUP",
-            "received_at": now,
-            "has_photo":   bool(msg.photo),
-            "file_id":     msg.photo[-1].file_id if msg.photo else None,
-            "notes":       msg.text or ""
+            "user_id":       uid,
+            "plan_key":      plan_key,
+            "plan_label":    next(p['label'] for p in PLANS if p['key']==plan_key),
+            "received_at":   now,
+            "notes":         msg.text or "",
+            "has_photo":     bool(msg.photo),
+            "file_id":       msg.photo[-1].file_id if msg.photo else None
         }
         receipts.setdefault(str(uid), []).append(entry)
         save('receipts', receipts)
 
-        # Preparar notificación
+        # Notificar a cada admin individualmente
         caption = (
-            f"📥 *Nuevo Pago Recibido*\n\n"
+            f"📥 *Nuevo Comprobante:*\n\n"
             f"• Usuario: @{msg.from_user.username or msg.from_user.first_name} (`{uid}`)\n"
-            f"• Plan: {entry['plan_label']} — {entry['plan_price']}\n"
+            f"• Plan: {entry['plan_label']}\n"
             f"• Fecha: `{now}`\n"
         )
-
-        # Enviar a cada super-admin
         for admin in ADMINS:
             if entry["has_photo"]:
                 bot.send_photo(admin, entry["file_id"], caption=caption, parse_mode='Markdown')
             else:
-                bot.send_message(admin, caption + (f"\n📝 Notas: {entry['notes']}" if entry['notes'] else ""), parse_mode='Markdown')
+                bot.send_message(admin, caption + f"\n📝 Notas: {entry['notes']}", parse_mode='Markdown')
 
-        # Enviar al grupo de admins
+        # Reenviar al grupo de admins también
         if ADMIN_GROUP_ID:
             if entry["has_photo"]:
                 bot.send_photo(ADMIN_GROUP_ID, entry["file_id"], caption=caption, parse_mode='Markdown')
             else:
-                bot.send_message(ADMIN_GROUP_ID, caption + (f"\n📝 Notas: {entry['notes']}" if entry['notes'] else ""), parse_mode='Markdown')
+                bot.send_message(ADMIN_GROUP_ID, caption + f"\n📝 Notas: {entry['notes']}", parse_mode='Markdown')
 
-        # Confirmación al usuario
+        # Confirmación final al usuario
         bot.send_message(
             uid,
-            "✅ *Recibo recibido.*\n"
-            "En breve un administrador validará tu pago y activará tu suscripción.",
+            "✅ *¡Comprobante recibido!*\n\n"
+            "Tu pago ha sido enviado para revisión y aprobación. 👨‍💼\n"
+            "Te avisaré aquí mismo en cuanto tu suscripción esté activa. ¡Gracias! ✨",
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
         )
+
+        # Limpiamos la sesión
         bot.user_data.pop(uid, None)
+```0
