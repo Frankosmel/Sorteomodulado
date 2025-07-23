@@ -1,5 +1,3 @@
-# admin_handlers.py
-
 from telebot import TeleBot
 from telebot.types import (
     ReplyKeyboardMarkup,
@@ -56,7 +54,7 @@ def register_admin_handlers(bot: TeleBot):
             for k, info in auth.items():
                 exp = datetime.fromisoformat(info['vence']).date()
                 usuario = info.get('username', '')
-                plan = info.get('plan', '—')
+                plan    = info.get('plan', '—')
                 resp += f"• {usuario} (`{k}`) — plan *{plan}* vence el *{exp}*\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -93,9 +91,9 @@ def register_admin_handlers(bot: TeleBot):
             resp = "⏳ *Días Restantes:*\n\n"
             now = datetime.utcnow()
             for k, info in auth.items():
-                dias = (datetime.fromisoformat(info['vence']) - now).days
+                dias    = (datetime.fromisoformat(info['vence']) - now).days
                 usuario = info.get('username', '')
-                plan = info.get('plan', '—')
+                plan    = info.get('plan', '—')
                 resp += f"• {usuario} (`{k}`) — plan *{plan}*: {dias} día(s)\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -140,7 +138,8 @@ def register_admin_handlers(bot: TeleBot):
         parts = [p.strip() for p in msg.text.split(',')]
         if len(parts)!=2 or not parts[0].isdigit() or not parts[1].startswith('@'):
             return bot.reply_to(msg, "❌ Formato inválido. Usa `ID,@usuario`.", parse_mode='Markdown')
-        user_id = int(parts[0]); username = parts[1]
+        user_id  = int(parts[0])
+        username = parts[1]
         # Guardamos temporalmente y pedimos plan
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
         kb = InlineKeyboardMarkup(row_width=1)
@@ -161,23 +160,24 @@ def register_admin_handlers(bot: TeleBot):
         if not pending:
             return bot.send_message(admin_id, "⚠️ Sesión expirada. Vuelve a Autorizar.", parse_mode='Markdown')
         plan_key = cq.data.replace("auth_plan_", "")
-        # Buscamos datos del plan
-        plan = next((p for p in PLANS if p["key"]==plan_key), None)
+        plan     = next((p for p in PLANS if p["key"]==plan_key), None)
         if not plan:
             return bot.send_message(admin_id, "❌ Plan inválido.", parse_mode='Markdown')
-        # Calculamos fecha de vencimiento
-        duration = plan.get("duration_days", VIGENCIA_DIAS)
-        vence_date = (datetime.utcnow() + timedelta(days=duration)).isoformat()
-        # Guardamos
-        add_authorized(pending["user_id"], pending["username"], plan_key, vence_date)
-        # Confirmación
+
+        # Llamamos correctamente a add_authorized con label, expiración interna
+        add_authorized(pending["user_id"], pending["username"], plan['label'])
+
+        # Calculamos fecha de vencimiento para informar
+        exp_date = (datetime.utcnow() + timedelta(days=plan.get("duration_days", VIGENCIA_DIAS))).date()
+
         bot.send_message(
             admin_id,
-            f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con plan *{plan['label']}* hasta *{vence_date[:10]}*.",
+            f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado "
+            f"con plan *{plan['label']}* hasta *{exp_date}*.",
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
         )
-        # Limpiamos
+
         del PENDING_AUTH[admin_id]
 
     def process_deauthorize(msg):
@@ -192,13 +192,17 @@ def register_admin_handlers(bot: TeleBot):
     def send_to_authorized(msg):
         texto = msg.text
         for k in list_authorized().keys():
-            try: bot.send_message(int(k), texto)
-            except: pass
+            try:
+                bot.send_message(int(k), texto)
+            except:
+                pass
         bot.send_message(msg.from_user.id, "✅ Mensaje enviado a todos los autorizados.", reply_markup=ReplyKeyboardRemove())
 
     def send_to_groups(msg):
         texto = msg.text
         for chat_id in load('grupos').keys():
-            try: bot.send_message(int(chat_id), texto)
-            except: pass
+            try:
+                bot.send_message(int(chat_id), texto)
+            except:
+                pass
         bot.send_message(msg.from_user.id, "✅ Mensaje reenviado a todos los grupos.", reply_markup=ReplyKeyboardRemove())
