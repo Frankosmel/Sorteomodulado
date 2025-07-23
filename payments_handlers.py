@@ -1,152 +1,185 @@
 # payments_handlers.py
 
-from telebot import TeleBot
-from telebot.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ReplyKeyboardRemove
-)
-from config import FILES
+from telebot import TeleBot, types
 from storage import load, save
-from datetime import datetime
+from config import FILES, VIGENCIA_DIAS, VIGENCIA_TRIMESTRAL
+from datetime import datetime, timedelta
 
 RECEIPTS_FILE = FILES["receipts"]
 
 def register_payment_handlers(bot: TeleBot):
     """
-    Maneja la lógica de selección de plan, 
-    captura de pago y notificación a admins.
+    Manejadores para flujo de contratación de planes:
+      - Selección de plan (callback_query)
+      - Recepción de datos de pago y captura
+      - Almacenamiento en receipts.json
+      - Notificación a super-admins para aprobación
     """
+    # Aseguramos que exista receipts.json
+    try:
+        with open(RECEIPTS_FILE, 'r'):
+            pass
+    except FileNotFoundError:
+        with open(RECEIPTS_FILE, 'w') as f:
+            f.write("{}")
 
-    # 1) CallbackQuery que llega al pulsar uno de los botones de plan
-    @bot.callback_query_handler(lambda cq: cq.data.startswith("plan_"))
-    def handle_plan_selection(cq):
-        plan = cq.data  # e.g. 'plan_1m1g', 'plan_3m3g', etc.
-        user_id = cq.from_user.id
-
-        # Mensaje explicativo con datos de pago y solicitud de captura
-        text = (
-            f"📦 *Has elegido el paquete* `{plan}`\n\n"
-            "🔸 *Métodos de pago disponibles:*\n"
-            "  • Tarjeta: `9204 1299 7691 8161` (tu banco te enviará SMS con un código)\n"
-            "  • Saldo móvil (50% recargo): envía al 56246700\n\n"
-            "✏️ *Ahora*, por favor envíame una captura de pantalla\n"
-            "   del comprobante de la transferencia o pago.\n\n"
-            "⚠️ Incluye en el mensaje:\n"
-            "   • Tu @usuario de Telegram\n"
-            "   • Fecha y hora de la operación\n"
-            "   • Código SMS o referencia bancaria\n\n"
-            "_Cuando lo reciba, se lo reenviaré a los super-admins para verificar_"
-        )
-        bot.send_message(
-            user_id,
-            text,
-            parse_mode='Markdown',
-            reply_markup=ReplyKeyboardRemove()
-        )
-
-        # Guardo en receipts.json un registro preliminar
+    @bot.callback_query_handler(lambda cq: cq.data and cq.data.startswith("plan_"))
+    def handle_plan_selection(cq: types.CallbackQuery):
+        uid = cq.from_user.id
+        data = cq.data  # ej. "plan_1m1g"
+        # Mapeo de planes
+        planes = {
+            "plan_1m1g": {"meses": 1, "grupos": 1, "precio": 500},
+            "plan_1m2g": {"meses": 1, "grupos": 2, "precio": 900},   # 10% dto
+            "plan_1m3g": {"meses": 1, "grupos": 3, "precio": 1200},  # 20% dto
+            "plan_3m3g": {"meses": 3, "grupos": 3, "precio": 1800}   # 25% dto
+        }
+        plan = planes.get(data)
+        if not plan:
+            return bot.answer_callback_query(cq.id, "Plan desconocido.")
+        # Guardamos solicitud en receipts.json
         receipts = load("receipts")
-        receipts[str(user_id)] = {
-            "plan": plan,
-            "timestamp": datetime.utcnow().isoformat(),
-            "status": "pending"  # pendiente de verificación
+        rec_id = f"{uid}_{int(datetime.utcnow().timestamp())}"
+        receipts[rec_id] = {
+            "user_id": uid,
+            "plan_key": data,
+            "meses": plan["meses"],
+            "grupos": plan["grupos"],
+            "precio": plan["precio"],
+            "status": "pending",
+            "requested_at": datetime.utcnow().isoformat(),
+            "payment_info": None,
+            "screenshot_file_id": None
         }
         save("receipts", receipts)
-
-
-    # 2) Cuando el usuario envíe cualquier documento o foto, lo tomamos
-    @bot.message_handler(content_types=['photo', 'document'])
-    def handle_payment_proof(msg):
-        uid = msg.from_user.id
-        receipts = load("receipts")
-        rec = receipts.get(str(uid))
-
-        if not rec or rec.get("status") != "pending":
-            # No hay plan seleccionado o ya procesado
-            return bot.reply_to(
-                msg,
-                "❌ No detecté ningún plan pendiente. "
-                "Primero selecciona un paquete con /start.",
-                parse_mode='Markdown'
-            )
-
-        # Guardamos el file_id de la foto/documento
-        file_id = None
-        if msg.photo:
-            file_id = msg.photo[-1].file_id
-        else:
-            file_id = msg.document.file_id
-
-        rec["proof_file_id"] = file_id
-        rec["received_at"] = datetime.utcnow().isoformat()
-        rec["status"] = "awaiting_approval"
-        save("receipts", receipts)
-
-        bot.reply_to(
-            msg,
-            "✅ Captura recibida. En breve un super-admin la validará.",
+        # Pedimos datos de pago
+        bot.send_message(
+            uid,
+            f"🔔 Has elegido *{plan['meses']} mes(es), hasta {plan['grupos']} grupo(s)* por *{plan['precio']} CUP*.\n\n"
+            "➤ Envía ahora los datos de tu pago:\n"
+            "• Tipo de pago: Tarjeta / Saldo Móvil\n"
+            "• Número o refererencia de la transferencia\n"
+            "• Envíame una captura de pantalla del comprobante",
             parse_mode='Markdown'
         )
+        # Guardamos en el objeto de colección next_step
+        bot.register_next_step_handler_by_chat_id(uid, collect_payment_info, rec_id)
 
-        # Reenvío al canal/admins
-        admin_text = (
-            f"📥 *Nuevo comprobante de pago*\n\n"
-            f"• Usuario: `{uid}`\n"
-            f"• Plan: `{rec['plan']}`\n"
-            f"• Fecha pago: {rec['received_at']}\n\n"
-            "_Pulsa el botón para Aprobar o Rechazar_"
-        )
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
-            InlineKeyboardButton("✅ Aprobar", callback_data=f"approve_{uid}"),
-            InlineKeyboardButton("⛔ Rechazar", callback_data=f"reject_{uid}")
-        )
-        # reemplaza -100XXXXX por tu chat de admins
-        ADMIN_GROUP = -1002605404513
-        bot.send_message(
-            ADMIN_GROUP,
-            admin_text,
-            parse_mode='Markdown',
-            reply_markup=kb
-        )
-
-    # 3) Super-admin aprueba o rechaza
-    @bot.callback_query_handler(lambda cq: cq.data.startswith(("approve_","reject_")))
-    def handle_admin_approval(cq):
-        action, uid_str = cq.data.split("_", 1)
-        uid = int(uid_str)
+    def collect_payment_info(msg: types.Message, rec_id: str):
+        uid = msg.from_user.id
         receipts = load("receipts")
-        rec = receipts.get(uid_str)
-
-        if not rec:
-            return cq.answer("❌ Registro no encontrado.", show_alert=True)
-
-        if action == "approve":
-            # marcar autorizado
-            from auth import add_authorized
-            username = cq.from_user.username or ""
-            add_authorized(uid, f"@{username}")
-            rec["status"] = "approved"
-            # calcular vencimiento
-            exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date().isoformat()
-            rec["expires_at"] = exp_date
+        receipt = receipts.get(rec_id)
+        if not receipt or receipt["user_id"] != uid:
+            return bot.reply_to(msg, "⚠️ No se encontró tu solicitud. Vuelve a pulsar el plan.")
+        # Si envía foto, la guardamos
+        if msg.content_type == "photo":
+            file_id = msg.photo[-1].file_id
+            receipt["screenshot_file_id"] = file_id
+            save("receipts", receipts)
+            # Continuamos pidiendo confirmación
             bot.send_message(
                 uid,
-                f"🎉 *Pago verificado!* Tu plan `{rec['plan']}` "
-                f"estará activo hasta el *{exp_date}*.",
+                "✅ Captura recibida.\n"
+                "✏️ Ahora envía un mensaje con el método de pago y número de referencia.\n"
+                "_Ejemplo:_ `Tarjeta 9204 1299 7691 8161 — Ref: 56246700`",
                 parse_mode='Markdown'
             )
-            cq.answer("Usuario autorizado y plan activado.", show_alert=False)
+            bot.register_next_step_handler(msg, finalize_payment_info, rec_id)
+        else:
+            # Interpretamos texto como info
+            receipt["payment_info"] = msg.text.strip()
+            save("receipts", receipts)
+            if not receipt.get("screenshot_file_id"):
+                # Solicitamos captura si no llegó
+                bot.send_message(
+                    uid,
+                    "⚠️ Por favor, envía también la captura del pago.",
+                    parse_mode='Markdown'
+                )
+                bot.register_next_step_handler(msg, collect_payment_info, rec_id)
+            else:
+                return finalize_payment_info(msg, rec_id)
 
-        else:  # reject
-            rec["status"] = "rejected"
-            bot.send_message(
-                uid,
-                "❌ Lo siento, tu comprobante no fue válido. "
-                "Por favor intenta de nuevo o contacta soporte.",
-                parse_mode='Markdown'
-            )
-            cq.answer("Pago rechazado.", show_alert=False)
-
+    def finalize_payment_info(msg: types.Message, rec_id: str):
+        uid = msg.from_user.id
+        receipts = load("receipts")
+        receipt = receipts.get(rec_id)
+        if not receipt:
+            return
+        # Comprobamos que tenemos ambos info y screenshot
+        if not receipt.get("payment_info") or not receipt.get("screenshot_file_id"):
+            return bot.send_message(uid, "⚠️ Falta información o captura. Por favor envía todo.")
+        # Marcamos como awaiting_approval
+        receipt["status"] = "awaiting_approval"
+        receipt["submitted_at"] = datetime.utcnow().isoformat()
         save("receipts", receipts)
+        # Notificamos al usuario
+        bot.send_message(
+            uid,
+            "📬 Tu comprobante ha sido enviado y está pendiente de aprobación.\n"
+            "Te avisaré cuando esté activo.",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        # Reenviamos a cada admin
+        for admin_id in bot.config.ADMINS:
+            kb = types.InlineKeyboardMarkup()
+            kb.add(
+                types.InlineKeyboardButton("✅ Aprobar", callback_data=f"approve_{rec_id}"),
+                types.InlineKeyboardButton("❌ Rechazar", callback_data=f"reject_{rec_id}")
+            )
+            bot.send_photo(
+                admin_id,
+                photo=receipt["screenshot_file_id"],
+                caption=(
+                    f"🆔 *Solicitud*: `{rec_id}`\n"
+                    f"👤 Usuario: `{uid}`\n"
+                    f"📦 Plan: {receipt['meses']}m, {receipt['grupos']}g — {receipt['precio']} CUP\n"
+                    f"✏️ Pago: {receipt['payment_info']}\n"
+                    f"⏳ Estado: *Pendiente*"
+                ),
+                parse_mode='Markdown',
+                reply_markup=kb
+            )
+
+    @bot.callback_query_handler(lambda cq: cq.data and cq.data.startswith(("approve_", "reject_")))
+    def handle_approval(cq: types.CallbackQuery):
+        data = cq.data  # e.g. "approve_uid_timestamp"
+        action, rec_id = data.split("_", 1)
+        receipts = load("receipts")
+        receipt = receipts.get(rec_id)
+        if not receipt:
+            return bot.answer_callback_query(cq.id, "Solicitud no encontrada.")
+        if action == "approve":
+            # Calculamos fecha de expiración
+            meses = receipt["meses"]
+            if meses == 3:
+                delta = timedelta(days=VIGENCIA_TRIMESTRAL)
+            else:
+                delta = timedelta(days=VIGENCIA_DIAS * meses)
+            expira = datetime.utcnow() + delta
+            # Agregamos a autorizados
+            from auth import add_authorized
+            add_authorized(receipt["user_id"], None, vence=expira.isoformat())
+            receipt["status"] = "approved"
+            receipt["approved_at"] = datetime.utcnow().isoformat()
+            save("receipts", receipts)
+            # Avisamos al usuario
+            bot.send_message(
+                receipt["user_id"],
+                f"✅ Tu suscripción ha sido *aprobada*.\n"
+                f"Válida hasta: `{expira.date()}`.",
+                parse_mode='Markdown'
+            )
+            bot.answer_callback_query(cq.id, "✅ Aprobado")
+        else:
+            # Rechazo
+            receipt["status"] = "rejected"
+            receipt["rejected_at"] = datetime.utcnow().isoformat()
+            save("receipts", receipts)
+            bot.send_message(
+                receipt["user_id"],
+                "❌ Lo siento, tu comprobante ha sido *rechazado*.\n"
+                "Puedes intentar enviar uno nuevo.",
+                parse_mode='Markdown'
+            )
+            bot.answer_callback_query(cq.id, "❌ Rechazado")
