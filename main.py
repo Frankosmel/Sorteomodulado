@@ -10,31 +10,30 @@ from owner_handlers import register_owner_handlers, show_owner_menu
 from raffle_handlers import register_referral_handlers, register_raffle_handlers
 from draw_handlers import do_draw
 from scheduler import load_jobs, start_reminders
-from payments_handlers import register_payment_handlers
+from receipts import register_payment_handlers   # ← nuevo
 
-# ——— Inicialización ———
-ensure_files()                   # Asegura que todos los JSON existen
-bot = TeleBot(TOKEN)             # Crea instancia del bot
+# Inicializar archivos JSON y bot
+ensure_files()
+bot = TeleBot(TOKEN)
 
-# ——— /start ———
+# ——— Interceptamos /start PARA DAR MENÚ ———
 @bot.message_handler(commands=['start'])
 def handle_start(msg):
-    # Solo en privado
     if msg.chat.type != 'private':
         return bot.reply_to(msg, "👋 Escríbeme en privado para ver tu menú.")
     uid = msg.from_user.id
 
-    # Super‐admin
+    # Super-admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Owner (tiene al menos un grupo activado)
+    # Owner de al menos un grupo
     grupos = load('grupos')
     for gid, info in grupos.items():
         if info.get('activado_por') == uid:
             return show_owner_menu(bot, uid)
 
-    # Usuario no autorizado → muestro planes de suscripción
+    # No autorizado → muestro planes con botones inline
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("🌟 1 mes — 1 grupo — 300 CUP", callback_data="plan_1m1g"),
@@ -51,17 +50,17 @@ def handle_start(msg):
         reply_markup=kb
     )
 
-# ——— Registro de todos los handlers ———
-register_referral_handlers(bot)    # Referidos / entradas al grupo
-register_raffle_handlers(bot)      # /addsorteo, /sorteo_lista, ranking
-register_admin_handlers(bot)       # Panel y funciones de Admin
-register_owner_handlers(bot)       # Panel y funciones de Owner
-register_payment_handlers(bot)     # Flujos de suscripción / pagos
-do_draw(bot)                       # Función /sortear si aplica
-load_jobs(bot)                     # Carga sorteos programados
-start_reminders(bot)               # Recordatorios de suscripción
+# ——— Registrar resto de handlers ———
+register_referral_handlers(bot)
+register_raffle_handlers(bot)
+register_admin_handlers(bot)
+register_owner_handlers(bot)
+register_payment_handlers(bot)   # ← registrar pagos
+do_draw(bot)
+load_jobs(bot)
+start_reminders(bot)
 
-# ——— Polling ———
-bot.remove_webhook()               # Asegura que no haya webhook activo
+# Webhook off + polling
+bot.remove_webhook()
 print("🤖 Bot modular con scheduler en ejecución…")
 bot.infinity_polling()
