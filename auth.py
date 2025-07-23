@@ -1,8 +1,6 @@
-# auth.py
-
 from datetime import datetime, timedelta
 from storage import load, save
-from config import PLANS
+from config import VIGENCIA_DIAS
 
 def is_valid(user_id: int) -> bool:
     """True si el usuario está autorizado y su plan no ha vencido."""
@@ -18,26 +16,24 @@ def add_authorized(user_id: int, username: str, plan_key: str):
     Registra un nuevo usuario autorizado.
     - user_id: ID de Telegram
     - username: @usuario
-    - plan_key: clave del plan (ej. "plan_1m1g")
+    - plan_key: clave del plan, e.g. "plan_1m1g"
     """
     auth = load('autorizados')
     now = datetime.utcnow()
 
-    # Buscamos los detalles del plan en la configuración
-    plan = next((p for p in PLANS if p["key"] == plan_key), None)
-    if not plan:
-        raise ValueError(f"Plan desconocido: {plan_key}")
-
-    # Calculamos vencimiento según duration_days
-    duration = plan.get("duration_days", 30)
-    exp = now + timedelta(days=duration)
+    # Decidir duración según plan: 1 mes o 3 meses
+    if plan_key.startswith("plan_3m"):
+        days = VIGENCIA_DIAS * 3
+    else:
+        days = VIGENCIA_DIAS
+    exp = now + timedelta(days=days)
 
     auth[str(user_id)] = {
-        'username':   username,
-        'plan_key':   plan_key,
-        'plan_label': plan["label"],
-        'pago':       now.isoformat(),
-        'vence':      exp.isoformat()
+        'nombre':   username,
+        'username': username,
+        'plan':     plan_key,
+        'pago':     now.date().isoformat(),
+        'vence':    exp.isoformat()
     }
     save('autorizados', auth)
 
@@ -57,27 +53,23 @@ def list_authorized() -> dict:
 def register_group(chat_id: int, added_by: int):
     """
     Registra el grupo si el usuario aún no supera su cuota.
-    Lanza ValueError si ya tiene el máximo de grupos según su plan.
+    Lanza ValueError si ya tiene el máximo de grupos.
     """
     auth = load('autorizados')
     info = auth.get(str(added_by))
-    if not info:
-        raise ValueError("Usuario no autorizado")
-
-    # Extraemos el plan contratado
-    plan_key = info.get('plan_key')
-    plan = next((p for p in PLANS if p["key"] == plan_key), None)
-    if not plan:
-        raise ValueError(f"Plan inválido en auth: {plan_key}")
-
-    max_grupos = plan.get("max_groups", 1)
-
+    plan = info.get('plan', 'plan_1m1g')
+    # límites según plan
+    limits = {
+        'plan_1m1g': 1,
+        'plan_1m2g': 2,
+        'plan_1m3g': 3,
+        'plan_3m3g': 3
+    }
+    max_grupos = limits.get(plan, 1)
     grupos = load('grupos')
     actuales = sum(1 for g in grupos.values() if g.get('activado_por') == added_by)
     if actuales >= max_grupos:
-        raise ValueError(f"Límite de grupos alcanzado para el plan ({max_grupos})")
-
-    # Registrar el grupo
+        raise ValueError("Límite de grupos alcanzado")
     grupos.setdefault(str(chat_id), {
         'activado_por': added_by,
         'creado':       datetime.utcnow().date().isoformat()
