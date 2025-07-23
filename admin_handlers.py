@@ -9,17 +9,18 @@ from telebot.types import (
     InlineKeyboardButton,
     CallbackQuery
 )
-from config import ADMINS, PLANS, VIGENCIA_DIAS
+from config import ADMINS, PLANS
 from storage import load
 from auth import add_authorized, remove_authorized, list_authorized
 from datetime import datetime, timedelta
 
+# Estado temporal para autorizar
 PENDING_AUTH = {}
 
 def show_admin_menu(bot: TeleBot, chat_id: int):
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(KeyboardButton("Autorizados"), KeyboardButton("Autorizar"), KeyboardButton("Desautorizar"))
-    kb.row(KeyboardButton("Vencimientos"),   KeyboardButton("Grupos"),    KeyboardButton("Mensajes"))
+    kb.row(KeyboardButton("Vencimientos"), KeyboardButton("Grupos"), KeyboardButton("Mensajes"))
     kb.row(KeyboardButton("Salir"))
     bot.send_message(
         chat_id,
@@ -158,12 +159,12 @@ def register_admin_handlers(bot: TeleBot):
         if not pending:
             return bot.send_message(admin_id, "⚠️ Sesión expirada. Vuelve a Autorizar.", parse_mode='Markdown')
         plan_key = cq.data.replace("auth_plan_", "")
-        plan = next((p for p in PLANS if p["key"]==plan_key), None)
+        plan = next((p for p in PLANS if p['key']==plan_key), None)
         if not plan:
             return bot.send_message(admin_id, "❌ Plan inválido.", parse_mode='Markdown')
-        duration = plan.get("duration_days", VIGENCIA_DIAS)
+        duration = plan.get('duration_days', 30)
         vence = (datetime.utcnow() + timedelta(days=duration)).isoformat()
-        add_authorized(pending["user_id"], pending["username"], plan_key)
+        add_authorized(pending['user_id'], pending['username'], plan_key)
         bot.send_message(
             admin_id,
             f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con plan *{plan['label']}* hasta *{vence[:10]}*.",
