@@ -24,17 +24,15 @@ def handle_start(msg):
         return bot.reply_to(msg, "👋 Escríbeme en privado para ver tu menú.")
     uid = msg.from_user.id
 
-    # Si eres super-admin
+    # 1) Si eres super‐admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Si eres owner (tienes al menos un grupo activado)
-    grupos = load('grupos')
-    for gid, info in grupos.items():
-        if info.get('activado_por') == uid:
-            return show_owner_menu(bot, uid)
+    # 2) Si eres usuario autorizado (plan activo)
+    if is_valid(uid):
+        return show_owner_menu(bot, uid)
 
-    # Si no estás autorizado: muestro planes de suscripción
+    # 3) Si no estás autorizado: muestro planes de suscripción
     kb = InlineKeyboardMarkup(row_width=1)
     for plan in PLANS:
         kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
