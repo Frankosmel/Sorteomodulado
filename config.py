@@ -18,5 +18,5 @@ FILES = {
     "sorteo":         "sorteo.json",
     "jobs":           "jobs.json",
     "historial":      "historial.json",
-    "pagos":          "pagos.json"
+    "receipts":       "receipts.json"      # ← NUEVO: para guardar recibos de pago
 }
