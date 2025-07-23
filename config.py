@@ -11,19 +11,19 @@ ADMINS = [
     7907625643,  # Otro super‐admin
 ]
 
-# Duración del plan básico en días
+# Duración estándar de cada mes de suscripción, en días
 VIGENCIA_DIAS = 30
 
 # Definición de rutas de todos los datos JSON
 FILES = {
-    "autorizados":    "autorizados.json",    # Usuarios autorizados y fechas de vencimiento
-    "grupos":         "grupos.json",         # Grupos donde está activo el bot
-    "participantes":  "participantes.json",  # Quienes han sido añadidos al grupo
-    "invitaciones":   "invitaciones.json",   # Conteo de invitaciones por usuario
-    "sorteo":         "sorteo.json",         # Participantes apuntados al sorteo activo
-    "jobs":           "jobs.json",           # Sorteos programados por fecha/hora
-    "historial":      "historial.json",      # Historial de sorteos realizados
-    "receipts":       "receipts.json",       # Recibos de pago y confirmaciones
+    "autorizados":    "autorizados.json",
+    "grupos":         "grupos.json",
+    "participantes":  "participantes.json",
+    "invitaciones":   "invitaciones.json",
+    "sorteo":         "sorteo.json",
+    "jobs":           "jobs.json",
+    "historial":      "historial.json",
+    "receipts":       "receipts.json",      # <-- necesario para payment handlers
 }
 
 # Precios y descripción de planes para /start en privado (solo clientes no autorizados)
@@ -37,22 +37,22 @@ PLANS = [
     },
     {
         "key": "plan_1m2g",
-        "label": "✨ 1 mes — 2 grupos — 900 CUP",
-        "price": 900,
+        "label": "✨ 1 mes — 2 grupos — 950 CUP",  # 5% descuento
+        "price": int(500 * 2 * 0.95),
         "duration_days": 30,
         "max_groups": 2
     },
     {
         "key": "plan_1m3g",
-        "label": "⚡ 1 mes — 3 grupos — 1 200 CUP",
-        "price": 1200,
+        "label": "⚡ 1 mes — 3 grupos — 1 350 CUP",  # 10% descuento
+        "price": int(500 * 3 * 0.90),
         "duration_days": 30,
         "max_groups": 3
     },
     {
         "key": "plan_3m3g",
-        "label": "🔥 3 meses — 3 grupos — 3 000 CUP",
-        "price": 3000,
+        "label": "🔥 3 meses — 3 grupos — 2 550 CUP",  # 15% descuento
+        "price": int(500 * 3 * 3 * 0.85),
         "duration_days": 90,
         "max_groups": 3
     },
@@ -60,7 +60,7 @@ PLANS = [
 
 # Datos de pago para mostrar en el bot
 PAYMENT_INFO = {
-    "tarjeta": "9204 1299 7691 8161",
-    "sms_num": "56246700",
-    "saldo_movil": "56246700"
+    "tarjeta":    "9204 1299 7691 8161",
+    "sms_num":    "56246700",
+    "saldo_movil":"56246700"
 }
