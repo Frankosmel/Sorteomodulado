@@ -1,23 +1,32 @@
+import os
 import json
 from config import FILES
 
 def ensure_files():
-    """Crea todos los JSON vacíos si no existen."""
-    for path in FILES.values():
-        try:
-            open(path, 'r').close()
-        except FileNotFoundError:
-            with open(path, 'w') as f:
-                json.dump({}, f)
+    """
+    Crea todos los archivos JSON listados en FILES si no existen.
+    """
+    for key, path in FILES.items():
+        if not os.path.exists(path):
+            with open(path, 'w', encoding='utf-8') as f:
+                # Para receipts.json, ponemos lista; para el resto, dict
+                if key == "receipts":
+                    json.dump({}, f, ensure_ascii=False, indent=2)
+                else:
+                    json.dump({}, f, ensure_ascii=False, indent=2)
 
-def load(key: str):
-    """Carga el JSON asociado a FILES[key]."""
+def load(key):
+    """
+    Carga y devuelve el contenido JSON del archivo FILES[key].
+    """
     path = FILES[key]
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def save(key: str, data):
-    """Guarda `data` en el JSON asociado a FILES[key]."""
+def save(key, data):
+    """
+    Serializa `data` como JSON en el archivo FILES[key].
+    """
     path = FILES[key]
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
