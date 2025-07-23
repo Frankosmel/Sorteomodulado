@@ -1,64 +1,54 @@
-# draw_handlers.py
-
 import random
 from telebot import TeleBot
 from telebot.types import Message
 from storage import load, save
+from config import FILES
 
-def perform_draw(chat_id: str | int, bot: TeleBot, name: str = "Sorteo"):
+def do_draw(bot: TeleBot):
     """
-    Realiza el sorteo en el chat `chat_id`:
-      - Lee los participantes de 'sorteo.json'
-      - Elige uno al azar
-      - Envía el anuncio al chat
-      - Limpia la lista para futuros sorteos
-    """
-    chat_id_str = str(chat_id)
-    participantes = load('sorteo').get(chat_id_str, {})
-
-    if not participantes:
-        # No hay quién sortear, aviso genérico
-        bot.send_message(
-            chat_id,
-            "ℹ️ *No hay participantes para el sorteo.*",
-            parse_mode='Markdown'
-        )
-        return
-
-    # Elegir ganador
-    user_id, info = random.choice(list(participantes.items()))
-    nombre   = info.get('nombre', 'Usuario')
-    username = info.get('username')
-    if username:
-        mention = f"@{username}"
-    else:
-        mention = f"[{nombre}](tg://user?id={user_id})"
-
-    # Mensaje de resultado
-    texto = (
-        f"🎉 *{name} FINALIZADO!* 🎉\n\n"
-        f"👉 _¡El ganador es {mention}!_\n\n"
-        "🏆 ¡Felicidades!\n"
-        "_Gracias por participar._"
-    )
-    bot.send_message(
-        chat_id,
-        texto,
-        parse_mode='Markdown'
-    )
-
-    # Limpiar lista para el próximo sorteo
-    all_sorteos = load('sorteo')
-    all_sorteos[chat_id_str] = {}
-    save('sorteo', all_sorteos)
-
-
-def register_draw_handlers(bot: TeleBot):
-    """
-    Registra el comando /sortear para realizar un sorteo inmediato
-    dentro del grupo donde se invoque.
+    Registra en el bot el comando /sortear:
+    - Lee los participantes del grupo.
+    - Elige uno al azar.
+    - Envía un mensaje anunciando al ganador.
     """
     @bot.message_handler(commands=['sortear'])
     def handle_sortear(msg: Message):
-        # Usamos perform_draw para no duplicar lógica
-        perform_draw(msg.chat.id, bot, name="Sorteo")
+        chat_id = str(msg.chat.id)
+        sorteos = load('sorteo').get(chat_id, {})
+
+        # Si no hay participantes
+        if not sorteos:
+            return bot.reply_to(
+                msg,
+                "ℹ️ *No hay participantes en el sorteo.*",
+                parse_mode='Markdown'
+            )
+
+        # Elegir ganador
+        user_id, info = random.choice(list(sorteos.items()))
+        nombre   = info.get('nombre', 'Usuario')
+        username = info.get('username')
+        # Formatear mención
+        if username:
+            mention = f"@{username}"
+        else:
+            mention = f"[{nombre}](tg://user?id={user_id})"
+
+        # Mensaje “bonito” de anuncio
+        text = (
+            "🎉 *¡SORTEO FINALIZADO!* 🎉\n\n"
+            f"👉 El ganador de este sorteo es: {mention}\n\n"
+            "¡Felicidades! 🏆\n"
+            "_Gracias a todos por participar._"
+        )
+
+        bot.send_message(
+            msg.chat.id,
+            text,
+            parse_mode='Markdown'
+        )
+
+        # Opcional: vaciar lista para el siguiente sorteo
+        sorteos_all = load('sorteo')
+        sorteos_all[chat_id] = {}
+        save('sorteo', sorteos_all)
