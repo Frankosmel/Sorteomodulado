@@ -2,7 +2,7 @@
 
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from config import TOKEN, ADMINS, PLANS, PAYMENT_INFO
+from config import TOKEN, ADMINS, PLANS
 from storage import ensure_files, load
 from auth import is_valid
 from admin_handlers import register_admin_handlers, show_admin_menu
@@ -10,7 +10,7 @@ from owner_handlers import register_owner_handlers, show_owner_menu
 from raffle_handlers import register_referral_handlers, register_raffle_handlers
 from draw_handlers import register_draw_handlers
 from scheduler import load_jobs, start_reminders
-from payments_handlers import register_payment_handlers  # <-- importamos el handler de pagos
+from payments_handlers import register_payment_handlers
 
 # Inicializar archivos JSON y bot
 ensure_files()
@@ -39,7 +39,7 @@ def handle_start(msg):
     for plan in PLANS:
         kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
     # Botón de contacto
-    kb.add(InlineKeyboardButton("💬 Contactar al soporte", url="https://t.me/franosmel"))
+    kb.add(InlineKeyboardButton("💬 Contactar al soporte", url="https://t.me/frankosmel"))
 
     bot.send_message(
         uid,
@@ -55,7 +55,7 @@ register_raffle_handlers(bot)
 register_admin_handlers(bot)
 register_owner_handlers(bot)
 register_draw_handlers(bot)
-register_payment_handlers(bot)   # <-- aquí enlazamos el flujo de pagos
+register_payment_handlers(bot)
 load_jobs(bot)
 start_reminders(bot)
 
