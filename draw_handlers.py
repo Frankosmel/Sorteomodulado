@@ -1,65 +1,73 @@
 # draw_handlers.py
+
 """
-Módulo de handlers para el comando /draw (sorteo) en el bot.
-- Ejecuta un sorteo aleatorio entre participantes.
-- Registra el handler en la aplicación.
+Módulo de handlers para el comando /draw (sorteo) usando pyTelegramBotAPI (TeleBot).
+Define la lógica del sorteo y registra el handler en el bot.
 """
+
+import os
 import json
 import random
-import os
-from telegram import Update
-from telegram.ext import ContextTypes, CommandHandler, Application
+from telebot import TeleBot
+from telebot.types import Message
 
-# Archivo JSON donde se almacenan los participantes
+# Ruta al JSON de participantes (puedes cambiar vía env var)
 PARTICIPANTS_FILE = os.getenv('PARTICIPANTS_FILE', 'participants.json')
 
+def register_draw_handlers(bot: TeleBot) -> None:
+    """
+    Registra el handler para el comando /draw en la instancia TeleBot.
+    Llamar desde main.py: register_draw_handlers(bot)
+    """
 
-async def do_draw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Ejecuta el sorteo: elige aleatoriamente un participante y anuncia el ganador.
-    Si no existen participantes, informa al usuario.
-    """
-    # 1) Cargar la lista de participantes
-    try:
-        with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
-            participants = json.load(f)
-    except FileNotFoundError:
-        await update.message.reply_text(
-            "❌ No se encontró la lista de participantes. "
-            "Asegúrate de que haya un archivo participants.json válido."
+    @bot.message_handler(commands=['draw'])
+    def do_draw(message: Message) -> None:
+        """
+        Ejecuta el sorteo: 
+        - Carga participantes de JSON
+        - Elige uno al azar
+        - Responde con el ganador o informa errores
+        """
+        # 1) Intentar cargar la lista
+        try:
+            with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
+                participants = json.load(f)
+        except FileNotFoundError:
+            bot.reply_to(
+                message,
+                "❌ No se encontró la lista de participantes.\n"
+                "Asegúrate de que exista 'participants.json'."
+            )
+            return
+        except json.JSONDecodeError:
+            bot.reply_to(
+                message,
+                "❌ Error al leer la lista de participantes.\n"
+                "JSON malformado en 'participants.json'."
+            )
+            return
+
+        # 2) Revisar que no esté vacía
+        if not participants:
+            bot.reply_to(
+                message,
+                "❌ La lista de participantes está vacía.\n"
+                "Agrega participantes antes de usar /draw."
+            )
+            return
+
+        # 3) Seleccionar ganador al azar
+        winner = random.choice(participants)
+        name = winner.get('name', 'Desconocido')
+        user_id = winner.get('id', '')
+
+        # 4) Anunciar ganador
+        text = (
+            f"🏆 ¡El ganador es *{name}*!\n"
+            f"ID: `{user_id}`"
         )
-        return
-    except json.JSONDecodeError:
-        await update.message.reply_text(
-            "❌ Error al leer la lista de participantes. El archivo JSON está malformado."
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=text,
+            parse_mode='Markdown'
         )
-        return
-
-    # 2) Validar contenido
-    if not participants:
-        await update.message.reply_text(
-            "❌ La lista de participantes está vacía. "
-            "Agrega participantes antes de hacer el sorteo."
-        )
-        return
-
-    # 3) Seleccionar ganador
-    winner = random.choice(participants)
-    name = winner.get('name', 'Desconocido')
-    user_id = winner.get('id', '')
-
-    # 4) Anunciar ganador
-    message = (
-        f"🏆 <b>¡El ganador es {name}!</b>\n"
-        f"ID: <code>{user_id}</code>"
-    )
-    await update.message.reply_html(message)
-
-
-def register_draw_handlers(application: Application) -> None:
-    """
-    Registra el handler para el comando /draw en la aplicación.
-    Llamar desde main.py luego de crear la instancia de Application.
-    """
-    draw_cmd = CommandHandler('draw', do_draw)
-    application.add_handler(draw_cmd)
