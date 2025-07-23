@@ -3,7 +3,7 @@
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from storage import load, save
-from config import FILES
+from config import FILES, PLANS
 from datetime import datetime
 
 # Archivo donde guardaremos los recibos
@@ -11,14 +11,6 @@ RECEIPTS_FILE = FILES["receipts"]
 
 # Chat de admins donde reenviamos cada recibo
 ADMIN_GROUP_ID = -1002605404513
-
-# Definición de planes y sus precios
-PLAN_DETAILS = {
-    "plan_1m1g": { "name": "1 mes — 1 grupo", "price": "300 CUP" },
-    "plan_1m2g": { "name": "1 mes — 2 grupos", "price": "550 CUP" },
-    "plan_1m3g": { "name": "1 mes — 3 grupos", "price": "700 CUP" },
-    "plan_3m3g": { "name": "3 meses — 3 grupos", "price": "1 800 CUP" }
-}
 
 def register_payment_handlers(bot: TeleBot):
     """
@@ -31,19 +23,20 @@ def register_payment_handlers(bot: TeleBot):
     def handle_plan_selection(call):
         user_id = call.from_user.id
         plan_key = call.data
-        details = PLAN_DETAILS.get(plan_key)
+        # Buscamos el plan en la lista de config
+        plan = next((p for p in PLANS if p["key"] == plan_key), None)
 
         # Validación
-        if not details:
+        if not plan:
             bot.answer_callback_query(call.id, "❌ Plan no reconocido.")
             return
 
-        bot.answer_callback_query(call.id)  # elimina el círculo de carga
+        bot.answer_callback_query(call.id)  # quita el “cargando” del botón
 
         # Mensaje con instrucciones de pago
         msg = bot.send_message(
             user_id,
-            f"🌟 *Has seleccionado:* {details['name']} — {details['price']}\n\n"
+            f"🌟 *Has seleccionado:* {plan['label']}\n\n"
             "Para completar tu suscripción, realiza el pago usando uno de estos métodos:\n\n"
             "• 💳 *Tarjeta:* `9204 1299 7691 8161`\n"
             "• 📱 *Saldo móvil* (50% descuento): envía al `56246700`\n\n"
@@ -51,7 +44,7 @@ def register_payment_handlers(bot: TeleBot):
             parse_mode='Markdown'
         )
 
-        # Registramos el next step para procesar la captura
+        # Registramos el next step para procesar la captura, pasando la clave
         bot.register_next_step_handler(msg, process_receipt, plan_key)
 
     def process_receipt(msg: Message, plan_key: str):
@@ -61,13 +54,20 @@ def register_payment_handlers(bot: TeleBot):
         """
         user_id = msg.from_user.id
         timestamp = datetime.utcnow().isoformat()
+
+        # Cargamos los recibos actuales
         receipts = load('receipts')
+
+        # Buscamos el plan en config para extraer label y precio
+        plan = next((p for p in PLANS if p["key"] == plan_key), None)
+        plan_name = plan["label"] if plan else plan_key
+        plan_price = f"{plan['price']} CUP" if plan else ""
 
         # Construimos el registro
         rec = {
             "plan_key":      plan_key,
-            "plan_name":     PLAN_DETAILS[plan_key]["name"],
-            "plan_price":    PLAN_DETAILS[plan_key]["price"],
+            "plan_label":    plan_name,
+            "plan_price":    plan_price,
             "timestamp":     timestamp,
             "telegram_user": msg.from_user.username or msg.from_user.first_name,
             "user_id":       user_id,
@@ -85,11 +85,11 @@ def register_payment_handlers(bot: TeleBot):
         receipts.setdefault(str(user_id), []).append(rec)
         save('receipts', receipts)
 
-        # Preparamos el mensaje para los admins
+        # Preparamos la notificación para los admins
         caption = (
             f"📥 *Nuevo pago recibido*\n\n"
             f"• Usuario: @{rec['telegram_user']} (`{user_id}`)\n"
-            f"• Plan: {rec['plan_name']} — {rec['plan_price']}\n"
+            f"• Plan: {rec['plan_label']} — {rec['plan_price']}\n"
             f"• Fecha: {timestamp}\n"
         )
 
@@ -104,7 +104,7 @@ def register_payment_handlers(bot: TeleBot):
         else:
             bot.send_message(
                 ADMIN_GROUP_ID,
-                caption + f"\n📝 *Notas:* {rec['notes']}",
+                caption + (f"\n📝 *Notas:* {rec['notes']}" if rec['notes'] else ""),
                 parse_mode='Markdown'
             )
 
@@ -115,3 +115,6 @@ def register_payment_handlers(bot: TeleBot):
             "En breve un administrador validará tu pago y activará tu suscripción.",
             parse_mode='Markdown'
         )
+
+        # Limpiamos la sesión
+        bot.user_data.pop(user_id, None)
