@@ -22,22 +22,15 @@ def handle_start(msg):
         return bot.reply_to(msg, "👋 Escríbeme en privado para ver tu menú.")
     uid = msg.from_user.id
 
-    # 1) Si eres super‐admin → panel Admin
+    # 1) Super‐admin → panel Admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # 2) Si ya tienes un plan válido → panel Owner
+    # 2) Usuario con plan activo → panel Owner
     if is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # 3) Si eres Owner (activaste al menos un grupo) pero sin plan vigente,
-    #    también mostramos menú de Owner para que gestiones tus grupos.
-    grupos = load('grupos')
-    for gid, info in grupos.items():
-        if info.get('activado_por') == uid:
-            return show_owner_menu(bot, uid)
-
-    # 4) Si llegas aquí, no estás autorizado ni tienes plan → muestro suscripciones
+    # 3) Si no tiene plan activo, le mostramos suscripciones
     kb = InlineKeyboardMarkup(row_width=1)
     for plan in PLANS:
         kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
