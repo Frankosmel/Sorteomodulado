@@ -8,7 +8,7 @@ from auth import is_valid
 from admin_handlers import register_admin_handlers, show_admin_menu
 from owner_handlers import register_owner_handlers, show_owner_menu
 from raffle_handlers import register_referral_handlers, register_raffle_handlers
-from draw_handlers import do_draw             # importamos do_draw, no register_draw_handlers
+from draw_handlers import do_draw             # Asegúrate de que existe do_draw(bot)
 from scheduler import load_jobs, start_reminders
 from payments_handlers import register_payment_handlers
 
@@ -24,7 +24,7 @@ def handle_start(msg):
         return bot.reply_to(msg, "👋 Escríbeme en privado para ver tu menú.")
     uid = msg.from_user.id
 
-    # Si eres super‐admin
+    # Si eres super-admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
@@ -43,8 +43,9 @@ def handle_start(msg):
 
     bot.send_message(
         uid,
-        "📦 Planes de Suscripción\n\n"
+        "📦 *Planes de Suscripción*\n\n"
         "Elige el que mejor se adapte a tus necesidades:",
+        parse_mode='Markdown',
         reply_markup=kb
     )
 
@@ -53,7 +54,7 @@ register_referral_handlers(bot)
 register_raffle_handlers(bot)
 register_admin_handlers(bot)
 register_owner_handlers(bot)
-do_draw(bot)              # arrancamos draw_handlers
+do_draw(bot)
 register_payment_handlers(bot)
 load_jobs(bot)
 start_reminders(bot)
