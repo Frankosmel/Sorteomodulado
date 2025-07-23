@@ -12,9 +12,16 @@ from config import ADMINS, PLANS, VIGENCIA_DIAS
 from storage import load
 from auth import add_authorized, remove_authorized, list_authorized
 from datetime import datetime, timedelta
+import re
 
 # Para almacenar temporalmente al usuario que vamos a autorizar
 PENDING_AUTH = {}
+
+def _escape_md(text: str) -> str:
+    """
+    Escapa caracteres especiales de Markdown en `text`.
+    """
+    return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', text)
 
 def show_admin_menu(bot: TeleBot, chat_id: int):
     """Envía el teclado principal de admin a `chat_id`."""
@@ -55,8 +62,8 @@ def register_admin_handlers(bot: TeleBot):
             resp = "👥 *Lista de Autorizados:*\n\n"
             for k, info in auth.items():
                 exp = datetime.fromisoformat(info['vence']).date()
-                usuario = info.get('username', '')
-                plan = info.get('plan', '—')
+                usuario = _escape_md(info.get('username',''))
+                plan = _escape_md(info.get('plan','—'))
                 resp += f"• {usuario} (`{k}`) — plan *{plan}* vence el *{exp}*\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -94,8 +101,8 @@ def register_admin_handlers(bot: TeleBot):
             now = datetime.utcnow()
             for k, info in auth.items():
                 dias = (datetime.fromisoformat(info['vence']) - now).days
-                usuario = info.get('username', '')
-                plan = info.get('plan', '—')
+                usuario = _escape_md(info.get('username',''))
+                plan = _escape_md(info.get('plan','—'))
                 resp += f"• {usuario} (`{k}`) — plan *{plan}*: {dias} día(s)\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -134,15 +141,12 @@ def register_admin_handlers(bot: TeleBot):
             return bot.register_next_step_handler(bot.send_message(uid, "Ejemplo: Nuevo sorteo hoy!"), send_to_groups)
 
 
-    # — Funciones auxiliares — #
-
     def process_authorize(msg):
         uid = msg.from_user.id
         parts = [p.strip() for p in msg.text.split(',')]
         if len(parts)!=2 or not parts[0].isdigit() or not parts[1].startswith('@'):
             return bot.reply_to(msg, "❌ Formato inválido. Usa `ID,@usuario`.", parse_mode='Markdown')
         user_id = int(parts[0]); username = parts[1]
-        # Guardamos temporalmente y pedimos plan
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
         kb = InlineKeyboardMarkup(row_width=1)
         for plan in PLANS:
@@ -162,33 +166,27 @@ def register_admin_handlers(bot: TeleBot):
         if not pending:
             return bot.send_message(admin_id, "⚠️ *Sesión expirada.* Vuelve a Autorizar.", parse_mode='Markdown')
         plan_key = cq.data.replace("auth_plan_", "")
-        # Buscamos el plan
         plan = next((p for p in PLANS if p["key"] == plan_key), None)
         if not plan:
             return bot.send_message(admin_id, "❌ *Plan inválido.*", parse_mode='Markdown')
-        # Calculamos fecha de vencimiento
         days = plan.get("duration_days", VIGENCIA_DIAS)
         vence_date = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
+
         # Registramos autorización
-        add_authorized(
-            pending["user_id"],
-            pending["username"],
-            plan_key  # auth.py utiliza la key para definir duración
-        )
-        # Confirmación clara al admin
+        add_authorized(pending["user_id"], pending["username"], plan_key)
+
+        # Confirmación al admin
         bot.send_message(
             admin_id,
-            f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con *{plan['label']}* hasta *{vence_date}*.",
-            parse_mode='Markdown',
-            reply_markup=ReplyKeyboardRemove()
-        )
-        # Mensaje al usuario autorizado
-        bot.send_message(
-            pending['user_id'],
-            f"🎉 Hola {pending['username']}! Tu suscripción *{plan['label']}* ha sido activada y vence el *{vence_date}*.",
+            _escape_md(f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con {plan['label']} hasta {vence_date}."),
             parse_mode='Markdown'
         )
-        # Limpiamos pending
+        # Aviso al usuario
+        bot.send_message(
+            pending["user_id"],
+            _escape_md(f"🎉 Hola {pending['username']}! Tu suscripción {plan['label']} ha sido activada y vence el {vence_date}."),
+            parse_mode='Markdown'
+        )
         del PENDING_AUTH[admin_id]
 
     def process_deauthorize(msg):
@@ -213,4 +211,3 @@ def register_admin_handlers(bot: TeleBot):
             try: bot.send_message(int(chat_id), texto)
             except: pass
         bot.send_message(msg.from_user.id, "✅ Mensaje reenviado a todos los grupos.", reply_markup=ReplyKeyboardRemove())
-```0
