@@ -7,6 +7,24 @@ from storage import load
 from auth import add_authorized, remove_authorized, list_authorized
 from datetime import datetime, timedelta
 
+def show_admin_menu(bot: TeleBot, chat_id: int):
+    """
+    Envía el teclado principal de administración a `chat_id`.
+    Reutilizable desde /start.
+    """
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("Autorizados"), KeyboardButton("Autorizar"), KeyboardButton("Desautorizar"))
+    kb.row(KeyboardButton("Vencimientos"),   KeyboardButton("Grupos"),    KeyboardButton("Mensajes"))
+    kb.row(KeyboardButton("Salir"))
+
+    bot.send_message(
+        chat_id,
+        "👑 *Panel de Administración*\n\n"
+        "Selecciona una opción:",
+        parse_mode='Markdown',
+        reply_markup=kb
+    )
+
 def register_admin_handlers(bot: TeleBot):
     @bot.message_handler(commands=['admin'])
     def admin_panel(msg):
@@ -17,19 +35,7 @@ def register_admin_handlers(bot: TeleBot):
                 "⛔ *Acceso denegado.* Usa /admin en privado.",
                 parse_mode='Markdown'
             )
-
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.row(KeyboardButton("Autorizados"), KeyboardButton("Autorizar"), KeyboardButton("Desautorizar"))
-        kb.row(KeyboardButton("Vencimientos"),   KeyboardButton("Grupos"),    KeyboardButton("Mensajes"))
-        kb.row(KeyboardButton("Salir"))
-
-        bot.send_message(
-            msg.chat.id,
-            "👑 *Panel de Administración*\n\n"
-            "Selecciona una opción:",
-            parse_mode='Markdown',
-            reply_markup=kb
-        )
+        show_admin_menu(bot, msg.chat.id)
 
     @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
     def handle_admin(msg):
@@ -127,13 +133,25 @@ def register_admin_handlers(bot: TeleBot):
 
         # Sub‐menú: A AUTORIZADOS
         if text == "A autorizados":
-            bot.send_message(uid, "✏️ *Escribe el mensaje* que enviarás a todos los autorizados:", parse_mode='Markdown')
-            return bot.register_next_step_handler(bot.send_message(uid, "Ejemplo: ¡Recordatorio!"), send_to_authorized)
+            bot.send_message(uid,
+                "✏️ *Escribe el mensaje* que enviarás a todos los autorizados:",
+                parse_mode='Markdown'
+            )
+            return bot.register_next_step_handler(
+                bot.send_message(uid, "Ejemplo: ¡Recordatorio!"),
+                send_to_authorized
+            )
 
         # Sub‐menú: A GRUPOS
         if text == "A grupos":
-            bot.send_message(uid, "✏️ *Escribe el mensaje* que reenviarás a todos los grupos:", parse_mode='Markdown')
-            return bot.register_next_step_handler(bot.send_message(uid, "Ejemplo: Nuevo sorteo hoy!"), send_to_groups)
+            bot.send_message(uid,
+                "✏️ *Escribe el mensaje* que reenviarás a todos los grupos:",
+                parse_mode='Markdown'
+            )
+            return bot.register_next_step_handler(
+                bot.send_message(uid, "Ejemplo: Nuevo sorteo hoy!"),
+                send_to_groups
+            )
 
     # --- Funciones auxiliares ---
     def process_authorize(msg):
@@ -185,4 +203,4 @@ def register_admin_handlers(bot: TeleBot):
         bot.send_message(msg.from_user.id,
             "✅ Mensaje reenviado a todos los grupos.",
             reply_markup=ReplyKeyboardRemove()
-                        )
+                            )
