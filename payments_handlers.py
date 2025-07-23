@@ -2,159 +2,151 @@
 
 from telebot import TeleBot
 from telebot.types import (
-    ReplyKeyboardMarkup, KeyboardButton,
-    ReplyKeyboardRemove, Message
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardRemove
 )
+from config import FILES
 from storage import load, save
-from config import FILES, ADMINS
 from datetime import datetime
-
-# Definición de planes y sus precios en CUP
-PLANS = {
-    "1mes_1grupo":    {"label": "1 mes – 1 grupo (500 CUP)",   "price": 500},
-    "1mes_2grupos":   {"label": "1 mes – 2 grupos (900 CUP)",  "price": 900},   # 10% dto.
-    "3meses_3grupos": {"label": "3 meses – 3 grupos (2 700 CUP)", "price": 2700} # 10% dto.
-}
-
-# Métodos de pago disponibles
-METHODS = {
-    "tarjeta":     {"label": "Tarjeta (100 %)"},
-    "saldo_movil": {"label": "Saldo Móvil (50 %) al 56246700"}
-}
 
 RECEIPTS_FILE = FILES["receipts"]
 
-# Asegura que exista receipts.json
-try:
-    with open(RECEIPTS_FILE, 'r'):
-        pass
-except FileNotFoundError:
-    with open(RECEIPTS_FILE, 'w') as f:
-        f.write("{}")
-
 def register_payment_handlers(bot: TeleBot):
-    """Módulo para selección de plan y recepción de comprobantes."""
+    """
+    Maneja la lógica de selección de plan, 
+    captura de pago y notificación a admins.
+    """
 
-    # — Paso 1: Mostrar planes disponibles
-    @bot.message_handler(commands=['planes'])
-    def show_plans(msg):
-        kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        for plan in PLANS.values():
-            kb.add(KeyboardButton(plan["label"]))
-        kb.add(KeyboardButton("🔙 Cancelar"))
+    # 1) CallbackQuery que llega al pulsar uno de los botones de plan
+    @bot.callback_query_handler(lambda cq: cq.data.startswith("plan_"))
+    def handle_plan_selection(cq):
+        plan = cq.data  # e.g. 'plan_1m1g', 'plan_3m3g', etc.
+        user_id = cq.from_user.id
+
+        # Mensaje explicativo con datos de pago y solicitud de captura
+        text = (
+            f"📦 *Has elegido el paquete* `{plan}`\n\n"
+            "🔸 *Métodos de pago disponibles:*\n"
+            "  • Tarjeta: `9204 1299 7691 8161` (tu banco te enviará SMS con un código)\n"
+            "  • Saldo móvil (50% recargo): envía al 56246700\n\n"
+            "✏️ *Ahora*, por favor envíame una captura de pantalla\n"
+            "   del comprobante de la transferencia o pago.\n\n"
+            "⚠️ Incluye en el mensaje:\n"
+            "   • Tu @usuario de Telegram\n"
+            "   • Fecha y hora de la operación\n"
+            "   • Código SMS o referencia bancaria\n\n"
+            "_Cuando lo reciba, se lo reenviaré a los super-admins para verificar_"
+        )
         bot.send_message(
-            msg.chat.id,
-            "💳 *Planes de Suscripción*\n\n"
-            "Selecciona el plan que deseas contratar:",
+            user_id,
+            text,
+            parse_mode='Markdown',
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+        # Guardo en receipts.json un registro preliminar
+        receipts = load("receipts")
+        receipts[str(user_id)] = {
+            "plan": plan,
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "pending"  # pendiente de verificación
+        }
+        save("receipts", receipts)
+
+
+    # 2) Cuando el usuario envíe cualquier documento o foto, lo tomamos
+    @bot.message_handler(content_types=['photo', 'document'])
+    def handle_payment_proof(msg):
+        uid = msg.from_user.id
+        receipts = load("receipts")
+        rec = receipts.get(str(uid))
+
+        if not rec or rec.get("status") != "pending":
+            # No hay plan seleccionado o ya procesado
+            return bot.reply_to(
+                msg,
+                "❌ No detecté ningún plan pendiente. "
+                "Primero selecciona un paquete con /start.",
+                parse_mode='Markdown'
+            )
+
+        # Guardamos el file_id de la foto/documento
+        file_id = None
+        if msg.photo:
+            file_id = msg.photo[-1].file_id
+        else:
+            file_id = msg.document.file_id
+
+        rec["proof_file_id"] = file_id
+        rec["received_at"] = datetime.utcnow().isoformat()
+        rec["status"] = "awaiting_approval"
+        save("receipts", receipts)
+
+        bot.reply_to(
+            msg,
+            "✅ Captura recibida. En breve un super-admin la validará.",
+            parse_mode='Markdown'
+        )
+
+        # Reenvío al canal/admins
+        admin_text = (
+            f"📥 *Nuevo comprobante de pago*\n\n"
+            f"• Usuario: `{uid}`\n"
+            f"• Plan: `{rec['plan']}`\n"
+            f"• Fecha pago: {rec['received_at']}\n\n"
+            "_Pulsa el botón para Aprobar o Rechazar_"
+        )
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("✅ Aprobar", callback_data=f"approve_{uid}"),
+            InlineKeyboardButton("⛔ Rechazar", callback_data=f"reject_{uid}")
+        )
+        # reemplaza -100XXXXX por tu chat de admins
+        ADMIN_GROUP = -1002605404513
+        bot.send_message(
+            ADMIN_GROUP,
+            admin_text,
             parse_mode='Markdown',
             reply_markup=kb
         )
-        bot.user_data[msg.chat.id] = {"stage": "await_plan"}
 
-    # — Paso 2: Capturar plan y mostrar métodos de pago
-    @bot.message_handler(func=lambda m: m.chat.id in getattr(bot, 'user_data', {}) 
-                                   and bot.user_data[m.chat.id].get("stage")=="await_plan")
-    def pick_method(msg):
-        text = msg.text.strip()
-        if text == "🔙 Cancelar":
-            bot.send_message(msg.chat.id, "❌ Operación cancelada.", reply_markup=ReplyKeyboardRemove())
-            bot.user_data.pop(msg.chat.id, None)
-            return
+    # 3) Super-admin aprueba o rechaza
+    @bot.callback_query_handler(lambda cq: cq.data.startswith(("approve_","reject_")))
+    def handle_admin_approval(cq):
+        action, uid_str = cq.data.split("_", 1)
+        uid = int(uid_str)
+        receipts = load("receipts")
+        rec = receipts.get(uid_str)
 
-        # Buscamos el plan por etiqueta
-        for key, plan in PLANS.items():
-            if plan["label"] == text:
-                bot.user_data[msg.chat.id] = {
-                    "stage":      "await_method",
-                    "plan_key":   key,
-                    "plan_label": plan["label"],
-                    "plan_price": plan["price"]
-                }
-                kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-                for method in METHODS.values():
-                    kb.add(KeyboardButton(method["label"]))
-                kb.add(KeyboardButton("🔙 Cancelar"))
-                return bot.send_message(
-                    msg.chat.id,
-                    f"💰 *Métodos de Pago*\n\nPlan: *{plan['label']}*\nSelecciona tu método:",
-                    parse_mode='Markdown',
-                    reply_markup=kb
-                )
+        if not rec:
+            return cq.answer("❌ Registro no encontrado.", show_alert=True)
 
-        return bot.reply_to(msg, "❌ Selección inválida. Usa /planes para volver a empezar.")
+        if action == "approve":
+            # marcar autorizado
+            from auth import add_authorized
+            username = cq.from_user.username or ""
+            add_authorized(uid, f"@{username}")
+            rec["status"] = "approved"
+            # calcular vencimiento
+            exp_date = (datetime.utcnow() + timedelta(days=VIGENCIA_DIAS)).date().isoformat()
+            rec["expires_at"] = exp_date
+            bot.send_message(
+                uid,
+                f"🎉 *Pago verificado!* Tu plan `{rec['plan']}` "
+                f"estará activo hasta el *{exp_date}*.",
+                parse_mode='Markdown'
+            )
+            cq.answer("Usuario autorizado y plan activado.", show_alert=False)
 
-    # — Paso 3: Capturar método y pedir comprobante
-    @bot.message_handler(func=lambda m: m.chat.id in getattr(bot, 'user_data', {}) 
-                                   and bot.user_data[m.chat.id].get("stage")=="await_method")
-    def ask_receipt(msg):
-        text = msg.text.strip()
-        if text == "🔙 Cancelar":
-            bot.send_message(msg.chat.id, "❌ Operación cancelada.", reply_markup=ReplyKeyboardRemove())
-            bot.user_data.pop(msg.chat.id, None)
-            return
+        else:  # reject
+            rec["status"] = "rejected"
+            bot.send_message(
+                uid,
+                "❌ Lo siento, tu comprobante no fue válido. "
+                "Por favor intenta de nuevo o contacta soporte.",
+                parse_mode='Markdown'
+            )
+            cq.answer("Pago rechazado.", show_alert=False)
 
-        for mk, method in METHODS.items():
-            if method["label"] == text:
-                data = bot.user_data[msg.chat.id]
-                data.update({"stage": "await_receipt", "method_key": mk, "method_label": method["label"]})
-                bot.user_data[msg.chat.id] = data
-                return bot.send_message(
-                    msg.chat.id,
-                    "📸 *Envía ahora la captura* del comprobante como foto, junto con tu `ID` y `@usuario` en la leyenda.",
-                    parse_mode='Markdown',
-                    reply_markup=ReplyKeyboardRemove()
-                )
-
-        return bot.reply_to(msg, "❌ Método inválido. Usa /planes para reiniciar.")
-
-    # — Paso 4: Recibir foto y datos, guardar y reenviar
-    @bot.message_handler(content_types=['photo'])
-    def handle_receipt_photo(msg: Message):
-        if msg.chat.id not in getattr(bot, 'user_data', {}) \
-        or bot.user_data[msg.chat.id].get("stage") != "await_receipt":
-            return
-
-        data        = bot.user_data[msg.chat.id]
-        plan_key    = data["plan_key"]
-        method_key  = data["method_key"]
-        plan_label  = data["plan_label"]
-        method_label= data["method_label"]
-        caption     = msg.caption or ""
-        timestamp   = datetime.utcnow().isoformat()
-
-        entry = {
-            "user":          msg.chat.id,
-            "caption":       caption,
-            "photo_file_id": msg.photo[-1].file_id,
-            "plan_key":      plan_key,
-            "plan_label":    plan_label,
-            "method_key":    method_key,
-            "method_label":  method_label,
-            "when":          timestamp
-        }
-
-        # Guardar en receipts.json
-        receipts = load('receipts')
-        receipts.setdefault(plan_key, []).append(entry)
-        save('receipts', receipts)
-
-        # Reenviar a admins y soporte
-        texto = (
-            f"💰 *Nuevo Pago – {plan_label}*\n"
-            f"Usuario: `{msg.chat.id}`\n"
-            f"Método: *{method_label}*\n"
-            f"Cuando: {timestamp}\n"
-            f"— Leyenda: {caption}"
-        )
-        for aid in ADMINS:
-            bot.send_photo(aid, msg.photo[-1].file_id, caption=texto, parse_mode='Markdown')
-        support_chat = "-1002605404513"
-        bot.send_photo(support_chat, msg.photo[-1].file_id, caption=texto, parse_mode='Markdown')
-
-        # Confirmación usuario
-        bot.reply_to(
-            msg,
-            "✅ Recibido tu comprobante, te contactaré pronto para confirmar.",
-            parse_mode='Markdown'
-        )
-        bot.user_data.pop(msg.chat.id, None)
+        save("receipts", receipts)
