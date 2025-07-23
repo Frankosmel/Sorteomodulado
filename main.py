@@ -8,7 +8,7 @@ from auth import is_valid
 from admin_handlers import register_admin_handlers, show_admin_menu
 from owner_handlers import register_owner_handlers, show_owner_menu
 from raffle_handlers import register_referral_handlers, register_raffle_handlers
-from draw_handlers import do_draw             # IMPORTAMOS do_draw, no register_draw_handlers
+from draw_handlers import register_draw_handlers   # <-- asumimos exporta register_draw_handlers(bot)
 from scheduler import load_jobs, start_reminders
 from payments_handlers import register_payment_handlers
 
@@ -37,9 +37,13 @@ def handle_start(msg):
     # Si no estás autorizado: muestro planes de suscripción
     kb = InlineKeyboardMarkup(row_width=1)
     for plan in PLANS:
-        kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
+        kb.add(
+            InlineKeyboardButton(plan['label'], callback_data=plan['key'])
+        )
     # Botón de contacto
-    kb.add(InlineKeyboardButton("💬 Contactar al soporte", url="https://t.me/frankosmel"))
+    kb.add(
+        InlineKeyboardButton("💬 Contactar al soporte", url="https://t.me/franosmel")
+    )
 
     bot.send_message(
         uid,
@@ -54,8 +58,8 @@ register_referral_handlers(bot)
 register_raffle_handlers(bot)
 register_admin_handlers(bot)
 register_owner_handlers(bot)
-do_draw(bot)                        # Aquí arrancamos el módulo de draw_handlers
-register_payment_handlers(bot)
+register_draw_handlers(bot)      # <-- registramos draw_handlers
+register_payment_handlers(bot)   # <-- registramos flujo de pagos
 load_jobs(bot)
 start_reminders(bot)
 
