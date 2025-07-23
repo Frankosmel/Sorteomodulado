@@ -167,7 +167,7 @@ def register_admin_handlers(bot: TeleBot):
         plan = next((p for p in PLANS if p["key"] == plan_key), None)
         if not plan:
             return bot.send_message(admin_id, "❌ Plan inválido.", parse_mode='Markdown')
-        # Guardamos autorización
+        # **Aquí pasamos plan_key, no plan['label']**
         add_authorized(pending["user_id"], pending["username"], plan_key)
         bot.send_message(
             admin_id,
@@ -203,4 +203,3 @@ def register_admin_handlers(bot: TeleBot):
             except:
                 pass
         bot.send_message(msg.from_user.id, "✅ Mensaje reenviado a todos los grupos.", reply_markup=ReplyKeyboardRemove())
-```0
