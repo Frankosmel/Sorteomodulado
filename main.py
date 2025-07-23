@@ -1,5 +1,3 @@
-# main.py
-
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import TOKEN, ADMINS, PLANS
@@ -24,15 +22,21 @@ def handle_start(msg):
         return bot.reply_to(msg, "👋 Escríbeme en privado para ver tu menú.")
     uid = msg.from_user.id
 
-    # 1) Si eres super‐admin
+    # 1) Si eres super-admin: panel de admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # 2) Si eres usuario autorizado (plan activo)
+    # 2) Si tienes una suscripción válida (autorizado y no vencido)
     if is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # 3) Si no estás autorizado: muestro planes de suscripción
+    # 3) Si eres owner de al menos un grupo (tal vez activo sin suscripción)
+    grupos = load('grupos')
+    for gid, info in grupos.items():
+        if info.get('activado_por') == uid:
+            return show_owner_menu(bot, uid)
+
+    # 4) Si no estás autorizado: muestro planes de suscripción
     kb = InlineKeyboardMarkup(row_width=1)
     for plan in PLANS:
         kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
