@@ -31,7 +31,11 @@ def register_admin_handlers(bot: TeleBot):
     @bot.message_handler(commands=['admin'])
     def admin_panel(msg):
         if msg.chat.type != 'private' or msg.from_user.id not in ADMINS:
-            return bot.reply_to(msg, "⛔ *Acceso denegado.* Usa /admin en privado.", parse_mode='Markdown')
+            return bot.reply_to(
+                msg,
+                "⛔ *Acceso denegado.* Usa /admin en privado.",
+                parse_mode='Markdown'
+            )
         show_admin_menu(bot, msg.chat.id)
 
     @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
@@ -54,7 +58,7 @@ def register_admin_handlers(bot: TeleBot):
             for k, info in auth.items():
                 exp = datetime.fromisoformat(info['vence']).date()
                 usuario = info.get('username', '')
-                plan    = info.get('plan', '—')
+                plan = info.get('plan', '—')
                 resp += f"• {usuario} (`{k}`) — plan *{plan}* vence el *{exp}*\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -91,9 +95,9 @@ def register_admin_handlers(bot: TeleBot):
             resp = "⏳ *Días Restantes:*\n\n"
             now = datetime.utcnow()
             for k, info in auth.items():
-                dias    = (datetime.fromisoformat(info['vence']) - now).days
+                dias = (datetime.fromisoformat(info['vence']) - now).days
                 usuario = info.get('username', '')
-                plan    = info.get('plan', '—')
+                plan = info.get('plan', '—')
                 resp += f"• {usuario} (`{k}`) — plan *{plan}*: {dias} día(s)\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -136,9 +140,9 @@ def register_admin_handlers(bot: TeleBot):
     def process_authorize(msg):
         uid = msg.from_user.id
         parts = [p.strip() for p in msg.text.split(',')]
-        if len(parts)!=2 or not parts[0].isdigit() or not parts[1].startswith('@'):
+        if len(parts) != 2 or not parts[0].isdigit() or not parts[1].startswith('@'):
             return bot.reply_to(msg, "❌ Formato inválido. Usa `ID,@usuario`.", parse_mode='Markdown')
-        user_id  = int(parts[0])
+        user_id = int(parts[0])
         username = parts[1]
         # Guardamos temporalmente y pedimos plan
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
@@ -160,24 +164,17 @@ def register_admin_handlers(bot: TeleBot):
         if not pending:
             return bot.send_message(admin_id, "⚠️ Sesión expirada. Vuelve a Autorizar.", parse_mode='Markdown')
         plan_key = cq.data.replace("auth_plan_", "")
-        plan     = next((p for p in PLANS if p["key"]==plan_key), None)
+        plan = next((p for p in PLANS if p["key"] == plan_key), None)
         if not plan:
             return bot.send_message(admin_id, "❌ Plan inválido.", parse_mode='Markdown')
-
-        # Llamamos correctamente a add_authorized con label, expiración interna
-        add_authorized(pending["user_id"], pending["username"], plan['label'])
-
-        # Calculamos fecha de vencimiento para informar
-        exp_date = (datetime.utcnow() + timedelta(days=plan.get("duration_days", VIGENCIA_DIAS))).date()
-
+        # Guardamos autorización
+        add_authorized(pending["user_id"], pending["username"], plan_key)
         bot.send_message(
             admin_id,
-            f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado "
-            f"con plan *{plan['label']}* hasta *{exp_date}*.",
+            f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con plan *{plan['label']}*.",
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
         )
-
         del PENDING_AUTH[admin_id]
 
     def process_deauthorize(msg):
@@ -206,3 +203,4 @@ def register_admin_handlers(bot: TeleBot):
             except:
                 pass
         bot.send_message(msg.from_user.id, "✅ Mensaje reenviado a todos los grupos.", reply_markup=ReplyKeyboardRemove())
+```0
