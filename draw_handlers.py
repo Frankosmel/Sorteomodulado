@@ -1,54 +1,63 @@
+# draw_handlers.py
+"""
+Módulo de handlers para el comando /draw (sorteo) en el bot.
+Contiene la lógica para:
+- Realizar un sorteo aleatorio entre participantes.
+- Registrar el handler en la aplicación.
+"""
+import json
 import random
-from telebot import TeleBot
-from telebot.types import Message
-from storage import load, save
-from config import FILES
+import os
+from telegram import Update
+from telegram.ext import ContextTypes, CommandHandler, Application
 
-def do_draw(bot: TeleBot):
+# Ruta configurable del archivo JSON de participantes
+PARTICIPANTS_FILE = os.getenv('PARTICIPANTS_FILE', 'participants.json')
+
+async def do_draw(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Registra en el bot el comando /sortear:
-    - Lee los participantes del grupo.
-    - Elige uno al azar.
-    - Envía un mensaje anunciando al ganador.
+    Ejecuta el sorteo: elige aleatoriamente un participante y anuncia el ganador.
+    Si no existen participantes, informa al usuario.
     """
-    @bot.message_handler(commands=['sortear'])
-    def handle_sortear(msg: Message):
-        chat_id = str(msg.chat.id)
-        sorteos = load('sorteo').get(chat_id, {})
-
-        # Si no hay participantes
-        if not sorteos:
-            return bot.reply_to(
-                msg,
-                "ℹ️ *No hay participantes en el sorteo.*",
-                parse_mode='Markdown'
-            )
-
-        # Elegir ganador
-        user_id, info = random.choice(list(sorteos.items()))
-        nombre   = info.get('nombre', 'Usuario')
-        username = info.get('username')
-        # Formatear mención
-        if username:
-            mention = f"@{username}"
-        else:
-            mention = f"[{nombre}](tg://user?id={user_id})"
-
-        # Mensaje “bonito” de anuncio
-        text = (
-            "🎉 *¡SORTEO FINALIZADO!* 🎉\n\n"
-            f"👉 El ganador de este sorteo es: {mention}\n\n"
-            "¡Felicidades! 🏆\n"
-            "_Gracias a todos por participar._"
+    # Cargar participantes
+    try:
+        with open(PARTICIPANTS_FILE, 'r', encoding='utf-8') as f:
+            participants = json.load(f)
+    except FileNotFoundError:
+        await update.message.reply_text(
+            "❌ No se encontró la lista de participantes. "
+            "Asegúrate de que haya un archivo participants.json válido."
         )
-
-        bot.send_message(
-            msg.chat.id,
-            text,
-            parse_mode='Markdown'
+        return
+    except json.JSONDecodeError:
+        await update.message.reply_text(
+            "❌ Error al leer la lista de participantes. El archivo JSON está malformado."
         )
+        return
 
-        # Opcional: vaciar lista para el siguiente sorteo
-        sorteos_all = load('sorteo')
-        sorteos_all[chat_id] = {}
-        save('sorteo', sorteos_all)
+    if not participants:
+        await update.message.reply_text(
+            "❌ La lista de participantes está vacía. "
+            "Agrega participantes antes de hacer el sorteo."
+        )
+        return
+
+    # Elegir ganador
+    winner = random.choice(participants)
+    name = winner.get('name', 'Desconocido')
+    user_id = winner.get('id', '')
+
+    # Anunciar ganador
+    message = (
+        f"🏆 <b>¡El ganador es {name}!</b>\n"
+        f"ID: <code>{user_id}</code>"
+    )
+    await update.message.reply_html(message)
+
+def register_draw_handler(application: Application) -> None:
+    """
+    Registra el handler para el comando /draw en la aplicación.
+    Debe llamarse desde main.py luego de crear la instancia de Application.
+    """
+    draw_handler = CommandHandler('draw', do_draw)
+    application.add_handler(draw_handler)
