@@ -1,8 +1,6 @@
-# raffle_handlers.py
-
 from telebot import TeleBot
 from storage import load, save
-from config import FILES
+from config import FILES, ADMINS
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import random
@@ -37,6 +35,16 @@ def register_raffle_handlers(bot: TeleBot):
         user    = msg.from_user
         user_id = str(user.id)
 
+        grupos_aut = load('grupos_autorizados').get("grupos", [])
+        usuarios_aut = load('autorizados').get("users", [])
+
+        if chat_id not in grupos_aut:
+            return bot.reply_to(msg, "🚫 Este grupo no está autorizado para usar el bot.")
+        
+        # Solo permitir que usuarios autorizados o admins gestionen
+        if user_id not in usuarios_aut and user_id not in ADMINS:
+            return bot.reply_to(msg, "⛔ No estás autorizado para usar esta función.")
+
         sorteos = load('sorteo')
         sorteos.setdefault(chat_id, {})
 
@@ -57,6 +65,17 @@ def register_raffle_handlers(bot: TeleBot):
     @bot.message_handler(commands=['sorteo_lista'])
     def lista_sorteo(msg):
         chat_id = str(msg.chat.id)
+        user_id = str(msg.from_user.id)
+
+        grupos_aut = load('grupos_autorizados').get("grupos", [])
+        usuarios_aut = load('autorizados').get("users", [])
+
+        if chat_id not in grupos_aut:
+            return bot.reply_to(msg, "🚫 Este grupo no está autorizado para usar el bot.")
+        
+        if user_id not in usuarios_aut and user_id not in ADMINS:
+            return bot.reply_to(msg, "⛔ No estás autorizado para usar esta función.")
+
         sorteos = load('sorteo').get(chat_id, {})
 
         if not sorteos:
@@ -80,6 +99,10 @@ def _perform_draw(chat_id: str, bot: TeleBot, name: str):
      2) Envía mensaje al grupo con nombre.
      3) Borra la lista de participantes para ese chat.
     """
+    grupos_aut = load('grupos_autorizados').get("grupos", [])
+    if chat_id not in grupos_aut:
+        return bot.send_message(int(chat_id), "🚫 Este grupo no está autorizado para hacer sorteos.")
+
     sorteos = load('sorteo').get(chat_id, {})
     if not sorteos:
         return bot.send_message(int(chat_id), "ℹ️ No hay participantes para sortear.")
