@@ -37,6 +37,20 @@ def _perform_draw(chat_id: int, bot: TeleBot, name: str = "Sorteo") -> None:
         parse_mode='Markdown'
     )
 
+def realizar_sorteo(bot: TeleBot, chat_id: int, name: str = "Sorteo") -> None:
+    """
+    Función reutilizable para realizar sorteo desde otro módulo.
+    Aplica validaciones como en /draw.
+    """
+    grupos_aut = load("grupos_autorizados").get("grupos", [])
+    usuarios_aut = load("autorizados").get("users", [])
+
+    # Si se llama desde botones privados, no se conoce el user_id, así que se omite
+    if chat_id not in grupos_aut:
+        return bot.send_message(chat_id, "🚫 Este grupo no está autorizado para realizar sorteos.")
+    
+    _perform_draw(chat_id, bot, name)
+
 def register_draw_handlers(bot: TeleBot) -> None:
     """
     Registra el comando /draw en la instancia TeleBot.
@@ -46,7 +60,7 @@ def register_draw_handlers(bot: TeleBot) -> None:
         chat_id = message.chat.id
         user_id = message.from_user.id
 
-        # Solo permitir sorteo si el grupo está autorizado y el usuario también
+        # Validación de acceso
         grupos_aut = load("grupos_autorizados").get("grupos", [])
         usuarios_aut = load("autorizados").get("users", [])
 
