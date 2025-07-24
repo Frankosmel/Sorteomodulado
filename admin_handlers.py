@@ -147,17 +147,20 @@ def register_admin_handlers(bot: TeleBot):
 
         bot.send_message(
             uid,
-            "🏠 *Ahora envía el ID del grupo* donde se activará este usuario.",
+            "🏠 *Ahora envía el ID del grupo* donde se activará este usuario.\n\n🔎 Para obtenerlo, reenvía un mensaje desde el grupo al bot o escribe el ID (comienza con `-100`).",
             parse_mode='Markdown'
         )
         return bot.register_next_step_handler(msg, process_authorize_step2)
 
     def process_authorize_step2(msg):
         uid = msg.from_user.id
-        if not msg.text.isdigit():
-            return bot.reply_to(msg, "❌ ID de grupo inválido. Debe ser número.", parse_mode='Markdown')
+        if not msg.text.startswith("-100") or not msg.text[1:].isdigit():
+            return bot.reply_to(msg, "❌ ID de grupo inválido. Debe comenzar con `-100` y ser numérico.", parse_mode='Markdown')
 
         group_id = int(msg.text)
+        if uid not in PENDING_AUTH:
+            return bot.reply_to(msg, "⚠️ Error interno. Intenta autorizar nuevamente.", parse_mode='Markdown')
+
         PENDING_AUTH[uid]["group_id"] = group_id
 
         kb = InlineKeyboardMarkup(row_width=1)
@@ -191,17 +194,14 @@ def register_admin_handlers(bot: TeleBot):
         days = plan.get("duration_days", VIGENCIA_DIAS)
         vence_date = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
 
-        # 1) Autorizar usuario
         add_authorized(pending["user_id"], pending["username"], plan_key)
 
-        # 2) Agregar grupo autorizado
         grupos_aut = load("grupos_autorizados")
         grupos_aut.setdefault("grupos", [])
         if pending["group_id"] not in grupos_aut["grupos"]:
             grupos_aut["grupos"].append(pending["group_id"])
             save("grupos_autorizados", grupos_aut)
 
-        # 3) Registrar grupo con info extra
         grupos = load("grupos")
         grupos[str(pending["group_id"])] = {
             "activado_por": pending["user_id"],
@@ -209,7 +209,6 @@ def register_admin_handlers(bot: TeleBot):
         }
         save("grupos", grupos)
 
-        # 4) Notificaciones
         bot.send_message(
             admin_id,
             _escape_md(
@@ -266,4 +265,4 @@ def register_admin_handlers(bot: TeleBot):
             msg.from_user.id,
             "✅ Mensaje reenviado a todos los grupos.",
             reply_markup=ReplyKeyboardRemove()
-    )
+            )
