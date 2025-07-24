@@ -132,6 +132,7 @@ def register_payment_handlers(bot: TeleBot):
             else:
                 bot.send_message(ADMIN_GROUP_ID, caption + (f"\n📝 Notas: {entry['notes']}" if entry['notes'] else ""), parse_mode='Markdown')
 
+        # Marcar usuario como autorizado provisionalmente
         autorizados = load("autorizados")
         usuarios = set(autorizados.get("users", []))
         usuarios.add(uid)
