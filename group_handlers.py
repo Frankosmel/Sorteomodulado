@@ -26,7 +26,8 @@ def register_group_handlers(bot: TeleBot):
             # — Si el nuevo miembro es el BOT —
             if new_user.id == bot_id:
                 actor = msg.from_user
-                if actor.id not in load("autorizados").get("users", []):
+                autorizados = load("autorizados")
+                if str(actor.id) not in autorizados:
                     actor_name = escape_md(actor.username or actor.first_name)
                     kb = InlineKeyboardMarkup()
                     kb.add(InlineKeyboardButton("🔒 Suscríbete para activar", url=SUBSCRIBE_URL))
