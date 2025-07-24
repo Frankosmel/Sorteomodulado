@@ -30,6 +30,14 @@ def register_group_handlers(bot: TeleBot):
             # ✅ Registrar grupo (o avisar si excede límite)
             try:
                 register_group(msg.chat.id, adder)
+
+                # Añadir explícitamente 'activado_por' al grupo
+                grupos = load("grupos")
+                gid = str(msg.chat.id)
+                grupos[gid] = grupos.get(gid, {})
+                grupos[gid]["activado_por"] = adder
+                save("grupos", grupos)
+
                 bot.send_message(
                     msg.chat.id,
                     "✅ Bot activado en este grupo. ¡Gracias por tu compra! 🎉"
