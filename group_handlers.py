@@ -42,7 +42,7 @@ def show_group_management_menu(bot: TeleBot, cid: int):
 
 # ----------------- HANDLER PRINCIPAL -----------------
 
-def register_admin_handlers(bot: TeleBot):
+def register_group_handlers(bot: TeleBot):
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
     def admin_callback(call: CallbackQuery):
@@ -84,8 +84,7 @@ def register_admin_handlers(bot: TeleBot):
             username = data.get("username", "")
             vencimiento = data.get("vence", "?")
             nombre = data.get("nombre", uid)
-            user_mention = f"@{username}" if username else str(uid)
-            msg += f"• {nombre} ({user_mention}) — vence: {vencimiento}\n"
+            msg += f"\n• {nombre} ({'@' + username if username else uid}) — vence: {vencimiento}"
 
         bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
@@ -109,17 +108,17 @@ def register_admin_handlers(bot: TeleBot):
     @bot.callback_query_handler(func=lambda call: call.data.startswith("grupos_"))
     def grupos_callback(call: CallbackQuery):
         grupos = load("grupos")
-        autorizados = set(load("grupos_autorizados").get("grupos", []))
-        todos = set(map(int, grupos.keys()))
+        autorizados = set(load("grupos_autorizados").get("groups", []))
+        todos = set(grupos.keys())
 
         if call.data == "grupos_ver_autorizados":
             if not autorizados:
                 return bot.edit_message_text("❌ No hay grupos autorizados.", call.message.chat.id, call.message.message_id)
             msg = "✅ *Grupos autorizados:*\n\n"
             for gid in autorizados:
-                nombre = grupos.get(str(gid), {}).get("nombre", "Grupo")
+                nombre = grupos.get(gid, {}).get("nombre", "Grupo")
                 enlace = f"https://t.me/c/{str(gid)[4:]}"
-                msg += f"• {gid} — {nombre}\n{enlace}\n"
+                msg += f"\n• {gid} — {nombre}\n{enlace}"
             bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
         elif call.data == "grupos_ver_no_autorizados":
@@ -128,9 +127,9 @@ def register_admin_handlers(bot: TeleBot):
                 return bot.edit_message_text("✅ Todos los grupos están autorizados.", call.message.chat.id, call.message.message_id)
             msg = "🚫 *Grupos no autorizados:*\n\n"
             for gid in no_aut:
-                nombre = grupos.get(str(gid), {}).get("nombre", "Grupo")
+                nombre = grupos.get(gid, {}).get("nombre", "Grupo")
                 enlace = f"https://t.me/c/{str(gid)[4:]}"
-                msg += f"• {gid} — {nombre}\n{enlace}\n"
+                msg += f"\n• {gid} — {nombre}\n{enlace}"
             bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
 
         elif call.data == "grupos_salir_no_autorizados":
@@ -145,6 +144,3 @@ def register_admin_handlers(bot: TeleBot):
                     continue
             bot.edit_message_text(f"✅ Se ha salido de {len(no_aut)} grupo(s) no autorizados.",
                                   call.message.chat.id, call.message.message_id)
-
-        elif call.data == "admin_back":
-            show_admin_menu(bot, call.from_user.id)
