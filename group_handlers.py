@@ -1,5 +1,11 @@
 from telebot import TeleBot
-from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import (
+    Message,
+    CallbackQuery,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove
+)
 from config import ADMINS, STAFF_GROUP_ID, REPORT_CHANNEL_ID
 from storage import load, save
 from auth import remove_authorized, list_authorized
@@ -7,140 +13,130 @@ from auth import remove_authorized, list_authorized
 # ----------------- MENÚ PRINCIPAL ADMIN -----------------
 
 def show_admin_menu(bot: TeleBot, uid: int):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("👥 Gestión de Usuarios", callback_data="admin_users"),
-        InlineKeyboardButton("📊 Planes y Pagos", callback_data="admin_planes"),
-        InlineKeyboardButton("👥 Grupo Staff", callback_data="admin_staff"),
-        InlineKeyboardButton("📢 Canal Reportes", callback_data="admin_reportes"),
-        InlineKeyboardButton("👨‍👩‍👧‍👦 Grupos", callback_data="admin_grupos")
-    )
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("👥 Gestión de Usuarios"), KeyboardButton("📊 Planes y Pagos"))
+    kb.row(KeyboardButton("👥 Grupo Staff"), KeyboardButton("📢 Canal Reportes"))
+    kb.row(KeyboardButton("👨‍👩‍👧‍👦 Grupos"))
     bot.send_message(uid, "🔧 Panel de Administración — elige una opción:", reply_markup=kb)
+
 
 # ----------------- SUBMENÚ GESTIÓN DE USUARIOS -----------------
 
-def show_user_management_menu(bot: TeleBot, cid: int):
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("✅ Ver autorizados", callback_data="ver_autorizados"),
-        InlineKeyboardButton("❌ Desautorizar usuario", callback_data="desautorizar_usuario"),
-        InlineKeyboardButton("🔙 Atrás", callback_data="admin_back")
-    )
-    bot.edit_message_text("👥 Gestión de Usuarios:", cid, cid, reply_markup=kb)
+def show_user_management_menu(bot: TeleBot, uid: int):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("✅ Ver autorizados"), KeyboardButton("❌ Desautorizar usuario"))
+    kb.row(KeyboardButton("🔙 Volver"))
+    bot.send_message(uid, "👥 Gestión de Usuarios:", reply_markup=kb)
+
 
 # ----------------- SUBMENÚ GESTIÓN DE GRUPOS -----------------
 
-def show_group_management_menu(bot: TeleBot, cid: int):
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("✅ Ver autorizados", callback_data="grupos_ver_autorizados"),
-        InlineKeyboardButton("🚫 Ver no autorizados", callback_data="grupos_ver_no_autorizados"),
-        InlineKeyboardButton("⛔ Salir de no autorizados", callback_data="grupos_salir_no_autorizados"),
-        InlineKeyboardButton("🔙 Atrás", callback_data="admin_back")
-    )
-    bot.edit_message_text("📋 Gestión de Grupos:", cid, cid, reply_markup=kb)
+def show_group_management_menu(bot: TeleBot, uid: int):
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+    kb.row(KeyboardButton("✅ Ver grupos autorizados"))
+    kb.row(KeyboardButton("🚫 Ver no autorizados"))
+    kb.row(KeyboardButton("⛔ Salir de no autorizados"))
+    kb.row(KeyboardButton("🔙 Volver"))
+    bot.send_message(uid, "📋 Gestión de Grupos:", reply_markup=kb)
+
 
 # ----------------- HANDLER PRINCIPAL -----------------
 
 def register_group_handlers(bot: TeleBot):
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_"))
-    def admin_callback(call: CallbackQuery):
-        if call.from_user.id not in ADMINS:
-            return bot.answer_callback_query(call.id, "⛔ Acceso denegado.", show_alert=True)
+    @bot.message_handler(func=lambda m: m.text == "👥 Gestión de Usuarios" and m.from_user.id in ADMINS)
+    def menu_gestion_usuarios(m: Message):
+        show_user_management_menu(bot, m.chat.id)
 
-        if call.data == "admin_users":
-            return show_user_management_menu(bot, call.message.chat.id)
+    @bot.message_handler(func=lambda m: m.text == "📊 Planes y Pagos" and m.from_user.id in ADMINS)
+    def planes_pagos(m: Message):
+        bot.send_message(m.chat.id, "💳 Aquí puedes configurar o revisar los planes de pago. (Funcionalidad en desarrollo)")
 
-        elif call.data == "admin_grupos":
-            return show_group_management_menu(bot, call.message.chat.id)
+    @bot.message_handler(func=lambda m: m.text == "👥 Grupo Staff" and m.from_user.id in ADMINS)
+    def grupo_staff(m: Message):
+        bot.send_message(m.chat.id, f"👥 Grupo de staff actual:\n\n{STAFF_GROUP_ID}")
 
-        elif call.data == "admin_planes":
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text("💳 Aquí puedes configurar o revisar los planes de pago. (Funcionalidad en desarrollo)",
-                                  call.message.chat.id, call.message.message_id)
+    @bot.message_handler(func=lambda m: m.text == "📢 Canal Reportes" and m.from_user.id in ADMINS)
+    def canal_reportes(m: Message):
+        bot.send_message(m.chat.id, f"📢 Canal de reportes actual:\n\n{REPORT_CHANNEL_ID}")
 
-        elif call.data == "admin_staff":
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"👥 Grupo de staff actual:\n\n{STAFF_GROUP_ID}",
-                                  call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    @bot.message_handler(func=lambda m: m.text == "👨‍👩‍👧‍👦 Grupos" and m.from_user.id in ADMINS)
+    def menu_grupos(m: Message):
+        show_group_management_menu(bot, m.chat.id)
 
-        elif call.data == "admin_reportes":
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"📢 Canal de reportes actual:\n\n{REPORT_CHANNEL_ID}",
-                                  call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
-        elif call.data == "admin_back":
-            show_admin_menu(bot, call.from_user.id)
-
-    @bot.callback_query_handler(func=lambda call: call.data == "ver_autorizados")
-    def ver_autorizados(call: CallbackQuery):
+    @bot.message_handler(func=lambda m: m.text == "✅ Ver autorizados" and m.from_user.id in ADMINS)
+    def ver_autorizados(m: Message):
         users = list_authorized()
         if not users:
-            return bot.edit_message_text("❌ No hay usuarios autorizados.", call.message.chat.id, call.message.message_id)
-
+            return bot.send_message(m.chat.id, "❌ No hay usuarios autorizados.")
         msg = "✅ *Usuarios autorizados:*\n\n"
         for uid, data in users.items():
             username = data.get("username", "")
             vencimiento = data.get("vence", "?")
             nombre = data.get("nombre", uid)
-            msg += f"\n• {nombre} ({'@' + username if username else uid}) — vence: {vencimiento}"
+            msg += f"• {nombre} ({'@' + username if username else uid}) — vence: {vencimiento}\n"
+        bot.send_message(m.chat.id, msg, parse_mode="Markdown")
 
-        bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    @bot.message_handler(func=lambda m: m.text == "❌ Desautorizar usuario" and m.from_user.id in ADMINS)
+    def pedir_id_para_desautorizar(m: Message):
+        bot.send_message(m.chat.id, "✏️ Escribe el ID del usuario que deseas desautorizar:")
+        bot.register_next_step_handler(m, recibir_id_para_desautorizar)
 
-    @bot.callback_query_handler(func=lambda call: call.data == "desautorizar_usuario")
-    def desautorizar_usuario(call: CallbackQuery):
-        bot.edit_message_text("✏️ Escribe el ID del usuario que deseas desautorizar:",
-                              call.message.chat.id, call.message.message_id)
+    def recibir_id_para_desautorizar(m: Message):
+        try:
+            user_id = int(m.text.strip())
+            if remove_authorized(user_id):
+                bot.send_message(m.chat.id, f"✅ Usuario {user_id} desautorizado correctamente.")
+            else:
+                bot.send_message(m.chat.id, "❌ Ese usuario no estaba autorizado.")
+        except:
+            bot.send_message(m.chat.id, "⚠️ Debes enviar un número de ID válido.")
 
-        @bot.message_handler(func=lambda m: str(m.chat.id) == str(call.message.chat.id))
-        def recibir_id(m: Message):
-            try:
-                user_id = int(m.text.strip())
-                if remove_authorized(user_id):
-                    bot.reply_to(m, f"✅ Usuario {user_id} desautorizado correctamente.")
-                else:
-                    bot.reply_to(m, "❌ Ese usuario no estaba autorizado.")
-            except:
-                bot.reply_to(m, "⚠️ Debes enviar un número de ID válido.")
-            bot.clear_step_handler_by_chat_id(m.chat.id)
+    @bot.message_handler(func=lambda m: m.text == "✅ Ver grupos autorizados" and m.from_user.id in ADMINS)
+    def ver_grupos_autorizados(m: Message):
+        grupos = load("grupos")
+        autorizados = set(load("grupos_autorizados").get("groups", []))
+        if not autorizados:
+            return bot.send_message(m.chat.id, "❌ No hay grupos autorizados.")
+        msg = "✅ *Grupos autorizados:*\n\n"
+        for gid in autorizados:
+            nombre = grupos.get(gid, {}).get("nombre", "Grupo")
+            enlace = f"https://t.me/c/{str(gid)[4:]}"
+            msg += f"• {gid} — {nombre}\n{enlace}\n"
+        bot.send_message(m.chat.id, msg, parse_mode="Markdown")
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("grupos_"))
-    def grupos_callback(call: CallbackQuery):
+    @bot.message_handler(func=lambda m: m.text == "🚫 Ver no autorizados" and m.from_user.id in ADMINS)
+    def ver_no_autorizados(m: Message):
         grupos = load("grupos")
         autorizados = set(load("grupos_autorizados").get("groups", []))
         todos = set(grupos.keys())
+        no_aut = todos - autorizados
+        if not no_aut:
+            return bot.send_message(m.chat.id, "✅ Todos los grupos están autorizados.")
+        msg = "🚫 *Grupos no autorizados:*\n\n"
+        for gid in no_aut:
+            nombre = grupos.get(gid, {}).get("nombre", "Grupo")
+            enlace = f"https://t.me/c/{str(gid)[4:]}"
+            msg += f"• {gid} — {nombre}\n{enlace}\n"
+        bot.send_message(m.chat.id, msg, parse_mode="Markdown")
 
-        if call.data == "grupos_ver_autorizados":
-            if not autorizados:
-                return bot.edit_message_text("❌ No hay grupos autorizados.", call.message.chat.id, call.message.message_id)
-            msg = "✅ *Grupos autorizados:*\n\n"
-            for gid in autorizados:
-                nombre = grupos.get(gid, {}).get("nombre", "Grupo")
-                enlace = f"https://t.me/c/{str(gid)[4:]}"
-                msg += f"\n• {gid} — {nombre}\n{enlace}"
-            bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+    @bot.message_handler(func=lambda m: m.text == "⛔ Salir de no autorizados" and m.from_user.id in ADMINS)
+    def salir_de_grupos(m: Message):
+        grupos = load("grupos")
+        autorizados = set(load("grupos_autorizados").get("groups", []))
+        todos = set(grupos.keys())
+        no_aut = todos - autorizados
+        if not no_aut:
+            return bot.send_message(m.chat.id, "✅ No hay grupos no autorizados para salir.")
+        count = 0
+        for gid in no_aut:
+            try:
+                bot.leave_chat(int(gid))
+                count += 1
+            except:
+                continue
+        bot.send_message(m.chat.id, f"✅ Se ha salido de {count} grupo(s) no autorizados.")
 
-        elif call.data == "grupos_ver_no_autorizados":
-            no_aut = todos - autorizados
-            if not no_aut:
-                return bot.edit_message_text("✅ Todos los grupos están autorizados.", call.message.chat.id, call.message.message_id)
-            msg = "🚫 *Grupos no autorizados:*\n\n"
-            for gid in no_aut:
-                nombre = grupos.get(gid, {}).get("nombre", "Grupo")
-                enlace = f"https://t.me/c/{str(gid)[4:]}"
-                msg += f"\n• {gid} — {nombre}\n{enlace}"
-            bot.edit_message_text(msg, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-
-        elif call.data == "grupos_salir_no_autorizados":
-            no_aut = todos - autorizados
-            if not no_aut:
-                return bot.edit_message_text("✅ No hay grupos no autorizados para salir.", call.message.chat.id, call.message.message_id)
-
-            for gid in no_aut:
-                try:
-                    bot.leave_chat(int(gid))
-                except:
-                    continue
-            bot.edit_message_text(f"✅ Se ha salido de {len(no_aut)} grupo(s) no autorizados.",
-                                  call.message.chat.id, call.message.message_id)
+    @bot.message_handler(func=lambda m: m.text == "🔙 Volver" and m.from_user.id in ADMINS)
+    def volver_menu_principal(m: Message):
+        show_admin_menu(bot, m.chat.id)
