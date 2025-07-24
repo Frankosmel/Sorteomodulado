@@ -16,14 +16,15 @@ VIGENCIA_DIAS = 30
 
 # Definición de rutas de todos los datos JSON
 FILES = {
-    "autorizados":    "autorizados.json",
-    "grupos":         "grupos.json",
-    "participantes":  "participantes.json",
-    "invitaciones":   "invitaciones.json",
-    "sorteo":         "sorteo.json",
-    "jobs":           "jobs.json",
-    "historial":      "historial.json",
-    "receipts":       "receipts.json",      # <-- necesario para payment handlers
+    "autorizados":        "autorizados.json",
+    "grupos":             "grupos.json",
+    "grupos_autorizados": "grupos_autorizados.json",  # ✅ Añadido correctamente
+    "participantes":      "participantes.json",
+    "invitaciones":       "invitaciones.json",
+    "sorteo":             "sorteo.json",
+    "jobs":               "jobs.json",
+    "historial":          "historial.json",
+    "receipts":           "receipts.json",  # necesario para payment handlers
 }
 
 # Precios y descripción de planes para /start en privado (solo clientes no autorizados)
@@ -60,7 +61,7 @@ PLANS = [
 
 # Datos de pago para mostrar en el bot
 PAYMENT_INFO = {
-    "tarjeta":    "9204 1299 7691 8161",
-    "sms_num":    "56246700",
-    "saldo_movil":"56246700"
+    "tarjeta":     "9204 1299 7691 8161",
+    "sms_num":     "56246700",
+    "saldo_movil": "56246700"
 }
