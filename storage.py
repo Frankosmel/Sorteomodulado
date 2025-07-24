@@ -9,9 +9,9 @@ def ensure_files():
     for key, path in FILES.items():
         if not os.path.exists(path):
             with open(path, 'w', encoding='utf-8') as f:
-                # Para receipts.json, ponemos lista; para el resto, dict
+                # Si el archivo es una lista (como receipts), lo iniciamos con []
                 if key == "receipts":
-                    json.dump({}, f, ensure_ascii=False, indent=2)
+                    json.dump([], f, ensure_ascii=False, indent=2)
                 else:
                     json.dump({}, f, ensure_ascii=False, indent=2)
 
