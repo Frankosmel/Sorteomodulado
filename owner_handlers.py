@@ -129,7 +129,7 @@ def register_owner_handlers(bot: TeleBot):
     def is_user_and_group_authorized(user_id, group_id):
         grupos_aut = load("grupos_autorizados").get("grupos", [])
         users_aut = load("autorizados").get("users", [])
-        return str(group_id) in grupos_aut and user_id in users_aut
+        return str(group_id) in grupos_aut and str(user_id) in users_aut
 
     def process_schedule(msg, gid):
         uid = msg.from_user.id
