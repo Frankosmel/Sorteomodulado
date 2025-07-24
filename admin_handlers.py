@@ -7,12 +7,11 @@ from telebot.types import (
     InlineKeyboardButton
 )
 from config import ADMINS, PLANS, VIGENCIA_DIAS
-from storage import load
+from storage import load, save
 from auth import add_authorized, remove_authorized, list_authorized
 from datetime import datetime, timedelta
 import re
 
-# Para almacenar temporalmente al usuario que vamos a autorizar
 PENDING_AUTH = {}
 
 def _escape_md(text: str) -> str:
@@ -58,11 +57,6 @@ def register_admin_handlers(bot: TeleBot):
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
         if text == "Autorizados":
-            bot.send_message(
-                uid,
-                "📋 *Autorizados*: muestra todos los usuarios con acceso y su fecha de vencimiento.",
-                parse_mode='Markdown'
-            )
             auth = list_authorized()
             if not auth:
                 return bot.send_message(uid, "ℹ️ *No hay usuarios autorizados.*", parse_mode='Markdown')
@@ -77,11 +71,10 @@ def register_admin_handlers(bot: TeleBot):
         if text == "Autorizar":
             bot.send_message(
                 uid,
-                "➕ *Autorizar*: añade un nuevo usuario.\n✏️ Envía: `ID,@usuario`\n\n"
-                "Ejemplo: `12345,@pepito`",
+                "➕ *Autorizar*: añade un nuevo usuario.\n✏️ Envía: `ID,@usuario`",
                 parse_mode='Markdown'
             )
-            return bot.register_next_step_handler(msg, process_authorize)
+            return bot.register_next_step_handler(msg, process_authorize_step1)
 
         if text == "Desautorizar":
             bot.send_message(
@@ -92,11 +85,6 @@ def register_admin_handlers(bot: TeleBot):
             return bot.register_next_step_handler(msg, process_deauthorize)
 
         if text == "Vencimientos":
-            bot.send_message(
-                uid,
-                "⏳ *Vencimientos*: muestra cuántos días quedan a cada suscripción.",
-                parse_mode='Markdown'
-            )
             auth = list_authorized()
             if not auth:
                 return bot.send_message(uid, "ℹ️ *No hay usuarios autorizados.*", parse_mode='Markdown')
@@ -110,11 +98,6 @@ def register_admin_handlers(bot: TeleBot):
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
         if text == "Grupos":
-            bot.send_message(
-                uid,
-                "🗂 *Grupos*: lista los chats donde el bot está activo y quién lo activó.",
-                parse_mode='Markdown'
-            )
             grupos = load('grupos')
             if not grupos:
                 return bot.send_message(uid, "ℹ️ *No hay grupos registrados.*", parse_mode='Markdown')
@@ -152,17 +135,32 @@ def register_admin_handlers(bot: TeleBot):
             )
             return bot.register_next_step_handler(msg, send_to_groups)
 
-    def process_authorize(msg):
+    def process_authorize_step1(msg):
         uid = msg.from_user.id
         partes = [p.strip() for p in msg.text.split(',')]
         if len(partes) != 2 or not partes[0].isdigit() or not partes[1].startswith('@'):
             return bot.reply_to(msg, "❌ Formato inválido. Usa `ID,@usuario`.", parse_mode='Markdown')
-        
+
         user_id = int(partes[0])
         username = partes[1]
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
 
-        kb = InlineKeyboardMarkup(row_width=1)  # ✅ corregido aquí
+        bot.send_message(
+            uid,
+            "🏠 *Ahora envía el ID del grupo* donde se activará este usuario.",
+            parse_mode='Markdown'
+        )
+        return bot.register_next_step_handler(msg, process_authorize_step2)
+
+    def process_authorize_step2(msg):
+        uid = msg.from_user.id
+        if not msg.text.isdigit():
+            return bot.reply_to(msg, "❌ ID de grupo inválido. Debe ser número.", parse_mode='Markdown')
+
+        group_id = int(msg.text)
+        PENDING_AUTH[uid]["group_id"] = group_id
+
+        kb = InlineKeyboardMarkup(row_width=1)
         for plan in PLANS:
             kb.add(InlineKeyboardButton(plan['label'], callback_data=f"auth_plan_{plan['key']}"))
 
@@ -184,30 +182,47 @@ def register_admin_handlers(bot: TeleBot):
                 "⚠️ *Sesión expirada.* Vuelve a Autorizar.",
                 parse_mode='Markdown'
             )
+
         plan_key = cq.data.replace("auth_plan_", "")
         plan = next((p for p in PLANS if p["key"] == plan_key), None)
         if not plan:
-            return bot.send_message(
-                admin_id,
-                "❌ *Plan inválido.*",
-                parse_mode='Markdown'
-            )
+            return bot.send_message(admin_id, "❌ *Plan inválido.*", parse_mode='Markdown')
+
         days = plan.get("duration_days", VIGENCIA_DIAS)
         vence_date = (datetime.utcnow() + timedelta(days=days)).date().isoformat()
 
+        # 1) Autorizar usuario
         add_authorized(pending["user_id"], pending["username"], plan_key)
 
+        # 2) Agregar grupo autorizado
+        grupos_aut = load("grupos_autorizados")
+        grupos_aut.setdefault("grupos", [])
+        if pending["group_id"] not in grupos_aut["grupos"]:
+            grupos_aut["grupos"].append(pending["group_id"])
+            save("grupos_autorizados", grupos_aut)
+
+        # 3) Registrar grupo con info extra
+        grupos = load("grupos")
+        grupos[str(pending["group_id"])] = {
+            "activado_por": pending["user_id"],
+            "creado": datetime.utcnow().isoformat()
+        }
+        save("grupos", grupos)
+
+        # 4) Notificaciones
         bot.send_message(
             admin_id,
             _escape_md(
-                f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con {plan['label']} hasta {vence_date}."
+                f"✅ Usuario {pending['username']} (`{pending['user_id']}`) autorizado con {plan['label']} hasta {vence_date}.\n"
+                f"Grupo `{pending['group_id']}` registrado como activo."
             ),
             parse_mode='Markdown'
         )
         bot.send_message(
             pending["user_id"],
             _escape_md(
-                f"🎉 Hola {pending['username']}! Tu suscripción {plan['label']} ha sido activada y vence el {vence_date}."
+                f"🎉 Hola {pending['username']}! Tu suscripción {plan['label']} ha sido activada y vence el {vence_date}.\n"
+                f"Grupo activo: `{pending['group_id']}`."
             ),
             parse_mode='Markdown'
         )
@@ -251,4 +266,4 @@ def register_admin_handlers(bot: TeleBot):
             msg.from_user.id,
             "✅ Mensaje reenviado a todos los grupos.",
             reply_markup=ReplyKeyboardRemove()
-            )
+    )
