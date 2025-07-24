@@ -1,14 +1,12 @@
 import re
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-
 from config import TOKEN, ADMINS, PLANS
 from utils import ensure_files
 from storage import load
 from auth import is_valid
 from owner_handlers import show_owner_menu, register_owner_handlers
 from admin_handlers import show_admin_menu, register_admin_handlers
-from referral_handlers import register_referral_handlers
 from raffle_handlers import register_raffle_handlers
 from draw_handlers import register_draw_handlers
 from group_handlers import register_group_handlers
@@ -43,19 +41,15 @@ def handle_start(message):
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Si ya tiene plan activo
+    # Si es dueño de algún grupo
     if is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # Si ha activado al menos un grupo
+    # Si no está validado pero tiene algún grupo activado
     grupos = load('grupos')
     for gid, info in grupos.items():
         if info.get('activado_por') == uid:
             return show_owner_menu(bot, uid)
-
-    # Si fue añadido como autorizado por un admin
-    if uid in AUTH_USERS:
-        return show_owner_menu(bot, uid)
 
     # Mostrar planes de suscripción
     kb = InlineKeyboardMarkup(row_width=1)
@@ -72,7 +66,6 @@ def handle_start(message):
     )
 
 # ————— Registro de todos los handlers —————
-register_referral_handlers(bot)
 register_raffle_handlers(bot)
 register_admin_handlers(bot)
 register_owner_handlers(bot)
