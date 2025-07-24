@@ -88,8 +88,8 @@ def register_payment_handlers(bot: TeleBot):
                 "✏️ *Adjunta la captura* del SMS o comprobante y tu `@usuario`."
             )
 
-        bot.send_message(uid, texto, parse_mode='Markdown')
-        bot.register_next_step_handler(cq.message, process_receipt)
+        sent = bot.send_message(uid, texto, parse_mode='Markdown')
+        bot.register_next_step_handler(sent, process_receipt)
 
     def process_receipt(msg: Message):
         uid = msg.from_user.id
