@@ -16,13 +16,9 @@ import re
 PENDING_AUTH = {}
 
 def _escape_md(text: str) -> str:
-    """
-    Escapa caracteres especiales de Markdown en `text`.
-    """
     return re.sub(r'([_*[\]()~`>#+=|{}.!-])', r'\\\1', text)
 
 def show_admin_menu(bot: TeleBot, chat_id: int):
-    """Envía el teclado principal de admin a `chat_id`."""
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.row(
         KeyboardButton("Autorizados"),
@@ -53,7 +49,7 @@ def register_admin_handlers(bot: TeleBot):
             )
         show_admin_menu(bot, msg.chat.id)
 
-    @bot.message_handler(func=lambda m: m.chat.type=='private' and m.from_user.id in ADMINS)
+    @bot.message_handler(func=lambda m: m.chat.type == 'private' and m.from_user.id in ADMINS)
     def handle_admin(msg):
         text = msg.text.strip()
         uid = msg.from_user.id
@@ -73,8 +69,8 @@ def register_admin_handlers(bot: TeleBot):
             resp = "👥 *Lista de Autorizados:*\n\n"
             for k, info in auth.items():
                 exp = datetime.fromisoformat(info['vence']).date()
-                usuario = _escape_md(info.get('username',''))
-                plan = _escape_md(info.get('plan','—'))
+                usuario = _escape_md(info.get('username', ''))
+                plan = _escape_md(info.get('plan', '—'))
                 resp += f"• {usuario} (`{k}`) — plan *{plan}* vence el *{exp}*\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -108,8 +104,8 @@ def register_admin_handlers(bot: TeleBot):
             now = datetime.utcnow()
             for k, info in auth.items():
                 dias = (datetime.fromisoformat(info['vence']) - now).days
-                usuario = _escape_md(info.get('username',''))
-                plan = _escape_md(info.get('plan','—'))
+                usuario = _escape_md(info.get('username', ''))
+                plan = _escape_md(info.get('plan', '—'))
                 resp += f"• {usuario} (`{k}`) — plan *{plan}*: {dias} día(s)\n"
             return bot.send_message(uid, resp, parse_mode='Markdown')
 
@@ -166,7 +162,7 @@ def register_admin_handlers(bot: TeleBot):
         username = partes[1]
         PENDING_AUTH[uid] = {"user_id": user_id, "username": username}
 
-        kb = InlineKeyboardMarkup(resize_keyboard=True, row_width=1)
+        kb = InlineKeyboardMarkup(row_width=1)  # ✅ corregido aquí
         for plan in PLANS:
             kb.add(InlineKeyboardButton(plan['label'], callback_data=f"auth_plan_{plan['key']}"))
 
@@ -255,4 +251,4 @@ def register_admin_handlers(bot: TeleBot):
             msg.from_user.id,
             "✅ Mensaje reenviado a todos los grupos.",
             reply_markup=ReplyKeyboardRemove()
-        )
+            )
