@@ -25,9 +25,12 @@ def escape_md(text):
 BOT_USERNAME = bot.get_me().username
 SUBSCRIBE_URL = f"https://t.me/{BOT_USERNAME}?start=subscribe"
 
-# ————— Carga la lista de usuarios autorizados desde JSON —————
+# ————— Carga de usuarios autorizados y grupos autorizados —————
 auth_data = load("autorizados")
 AUTH_USERS = set(auth_data.get("users", []))
+
+grupos_aut_data = load("grupos_autorizados")
+AUTH_GROUPS = set(grupos_aut_data.get("groups", []))
 
 # ————— Manejador del comando /start —————
 @bot.message_handler(commands=['start'])
@@ -41,11 +44,11 @@ def handle_start(message):
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Si es dueño de algún grupo
-    if is_valid(uid):
+    # Si es dueño de algún grupo autorizado o usuario autorizado
+    if uid in AUTH_USERS or is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # Si no está validado pero tiene algún grupo activado
+    # Si no está validado pero activó algún grupo
     grupos = load('grupos')
     for gid, info in grupos.items():
         if info.get('activado_por') == uid:
@@ -64,6 +67,19 @@ def handle_start(message):
         parse_mode='Markdown',
         reply_markup=kb
     )
+
+# ————— Manejador general para mensajes en grupos no autorizados —————
+@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
+def handle_group_message(message):
+    if str(message.chat.id) not in AUTH_GROUPS:
+        try:
+            bot.reply_to(
+                message,
+                "⚠️ Este grupo no está autorizado para utilizar el bot.\n\n"
+                "Contacta con el administrador para activarlo. Solo se permiten grupos autorizados."
+            )
+        except Exception:
+            pass
 
 # ————— Registro de todos los handlers —————
 register_raffle_handlers(bot)
