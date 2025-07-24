@@ -11,6 +11,12 @@ ADMINS = [
     7907625643,  # Otro super‐admin
 ]
 
+# ID del canal de reportes automáticos (usado por admin_handlers)
+REPORT_CHANNEL_ID = -1002125544275  # reemplaza por tu canal real si deseas
+
+# ID del grupo de staff donde se reciben logs y alertas internas
+STAFF_GROUP_ID = -1002605404513  # reemplaza por tu grupo real
+
 # Duración estándar de cada mes de suscripción, en días
 VIGENCIA_DIAS = 30
 
