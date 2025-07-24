@@ -29,20 +29,19 @@ def register_owner_handlers(bot: TeleBot):
         grupos = load('grupos')
         propios = {gid: info for gid, info in grupos.items() if info.get('activado_por') == uid}
 
-        # 🔙 Salir
         if text == "🔙 Salir":
             bot.user_data.pop(uid, None)
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
-        # Volver desde submenús
         if text == "🔙 Volver":
             return show_owner_menu(bot, uid)
 
-        # 🎲 Gestión desde botón principal
         if text == "🎲 Gestionar Sorteos":
             gid = bot.user_data.get(uid)
             if not gid:
                 return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
+            if not is_user_and_group_authorized(uid, gid):
+                return bot.send_message(uid, "🚫 No estás autorizado para gestionar este grupo.")
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
             kb.add(KeyboardButton("🗑️ Cancelar sorteo"), KeyboardButton("🔙 Volver"))
@@ -53,19 +52,17 @@ def register_owner_handlers(bot: TeleBot):
                 reply_markup=kb
             )
 
-        # 🎯 Sortear ahora
         if text == "🎯 Sortear ahora":
             gid = bot.user_data.get(uid)
-            if not gid:
-                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
+            if not gid or not is_user_and_group_authorized(uid, gid):
+                return bot.send_message(uid, "🚫 No estás autorizado para gestionar este grupo.")
             _perform_draw(gid, bot, name="Sorteo Rápido")
             return
 
-        # ⏰ Agendar sorteo
         if text == "⏰ Agendar sorteo":
             gid = bot.user_data.get(uid)
-            if not gid:
-                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
+            if not gid or not is_user_and_group_authorized(uid, gid):
+                return bot.send_message(uid, "🚫 No estás autorizado para gestionar este grupo.")
             bot.send_message(uid,
                 "⏰ *Agendar Sorteo*\n"
                 "✏️ Envía la fecha y hora en formato: `YYYY-MM-DD_HH:MM`\n"
@@ -74,8 +71,9 @@ def register_owner_handlers(bot: TeleBot):
             )
             return bot.register_next_step_handler(msg, lambda m: process_schedule(m, gid))
 
-        # 🗑️ Cancelar sorteo
         if text == "🗑️ Cancelar sorteo":
+            if not is_user_and_group_authorized(uid, bot.user_data.get(uid)):
+                return bot.send_message(uid, "🚫 No estás autorizado para cancelar sorteos.")
             jobs = load('jobs')
             if not jobs:
                 return bot.send_message(uid, "ℹ️ No hay sorteos programados.")
@@ -91,13 +89,11 @@ def register_owner_handlers(bot: TeleBot):
                 reply_markup=kb
             )
 
-        # Cancelar específico
         if text.startswith("Cancelar "):
             jid = text.split(maxsplit=1)[1]
             cancel_scheduled_raffle(bot, jid)
             return bot.send_message(uid, f"🗑️ Sorteo `{jid}` eliminado.", parse_mode='Markdown', reply_markup=ReplyKeyboardRemove())
 
-        # Gestión por grupo
         if text.startswith("Gestionar "):
             gid = text.split()[1]
             info = grupos.get(gid)
@@ -116,11 +112,10 @@ def register_owner_handlers(bot: TeleBot):
                 reply_markup=kb
             )
 
-        # 🌐 Cambiar zona horaria
         if text == "🌐 Cambiar zona horaria":
             gid = bot.user_data.get(uid)
-            if not gid:
-                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
+            if not gid or not is_user_and_group_authorized(uid, gid):
+                return bot.send_message(uid, "🚫 No estás autorizado para este grupo.")
             bot.send_message(uid,
                 "🌐 *Cambiar Zona Horaria*\n"
                 "✏️ Envía la nueva zona en formato: `Continent/City`\n"
@@ -130,6 +125,12 @@ def register_owner_handlers(bot: TeleBot):
             return bot.register_next_step_handler(msg, lambda m: cambiar_zona(m, gid))
 
     # — Funciones auxiliares —
+
+    def is_user_and_group_authorized(user_id, group_id):
+        grupos_aut = load("grupos_autorizados").get("grupos", [])
+        users_aut = load("autorizados").get("users", [])
+        return str(group_id) in grupos_aut and user_id in users_aut
+
     def process_schedule(msg, gid):
         uid = msg.from_user.id
         text = msg.text.strip()
