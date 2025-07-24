@@ -67,7 +67,7 @@ def register_payment_handlers(bot: TeleBot):
         if not plan_key:
             return bot.send_message(uid, "🚫 *Error interno.* Vuelve a /start.", parse_mode='Markdown')
 
-        plan = next(p for p in PLANS if p["key"] == plan_key)
+        plan = next(p for p in PLANS if p['key'] == plan_key)
         info = PAYMENT_INFO
 
         if method == "pay_tarjeta":
