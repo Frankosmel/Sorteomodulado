@@ -13,6 +13,8 @@ RECEIPTS_FILE = FILES["receipts"]
 ADMIN_GROUP_ID = -1002605404513
 
 def register_payment_handlers(bot: TeleBot):
+    bot.user_data = {}
+
     @bot.callback_query_handler(func=lambda c: c.data.startswith("plan_"))
     def on_plan_selected(cq):
         user_id = cq.from_user.id
@@ -21,7 +23,6 @@ def register_payment_handlers(bot: TeleBot):
         if not plan:
             return bot.answer_callback_query(cq.id, "❌ Plan inválido.")
 
-        bot.user_data = getattr(bot, 'user_data', {})
         bot.user_data[user_id] = {"plan": plan_key}
 
         kb = InlineKeyboardMarkup(row_width=1)
@@ -56,9 +57,10 @@ def register_payment_handlers(bot: TeleBot):
         )
         bot.user_data.pop(uid, None)
 
-    @bot.callback_query_handler(func=lambda c: c.data == "pay_tarjeta")
-    def on_pay_tarjeta(cq):
+    @bot.callback_query_handler(func=lambda c: c.data in ("pay_tarjeta", "pay_sms"))
+    def on_payment_method(cq):
         uid = cq.from_user.id
+        method = cq.data
         bot.answer_callback_query(cq.id)
         data = bot.user_data.get(uid, {})
         plan_key = data.get("plan")
@@ -68,36 +70,24 @@ def register_payment_handlers(bot: TeleBot):
         plan = next(p for p in PLANS if p["key"] == plan_key)
         info = PAYMENT_INFO
 
-        texto = (
-            "💳 *Pago con Tarjeta*\n\n"
-            f"• *Plan:* {plan['label']}\n"
-            f"• *Monto:* {plan['price']} CUP\n"
-            f"• Tarjeta:* `{info['tarjeta']}`\n"
-            f"• Número de confirmación al `{info['sms_num']}`\n\n"
-            "✏️ *Adjunta la captura* de la transferencia y tu `@usuario`."
-        )
-        bot.send_message(uid, texto, parse_mode='Markdown')
-        bot.register_next_step_handler(cq.message, process_receipt)
+        if method == "pay_tarjeta":
+            texto = (
+                "💳 *Pago con Tarjeta*\n\n"
+                f"• *Plan:* {plan['label']}\n"
+                f"• *Monto:* {plan['price']} CUP\n"
+                f"• Tarjeta:* `{info['tarjeta']}`\n"
+                f"• Número de confirmación al `{info['sms_num']}`\n\n"
+                "✏️ *Adjunta la captura* de la transferencia y tu `@usuario`."
+            )
+        else:
+            texto = (
+                "📱 *Pago por SMS / Saldo Móvil*\n\n"
+                f"• *Plan:* {plan['label']}\n"
+                f"• *Monto:* {plan['price']} CUP\n"
+                f"• Número:* `{info['sms_num']}`\n\n"
+                "✏️ *Adjunta la captura* del SMS o comprobante y tu `@usuario`."
+            )
 
-    @bot.callback_query_handler(func=lambda c: c.data == "pay_sms")
-    def on_pay_sms(cq):
-        uid = cq.from_user.id
-        bot.answer_callback_query(cq.id)
-        data = bot.user_data.get(uid, {})
-        plan_key = data.get("plan")
-        if not plan_key:
-            return bot.send_message(uid, "🚫 *Error interno.* Vuelve a /start.", parse_mode='Markdown')
-
-        plan = next(p for p in PLANS if p["key"] == plan_key)
-        info = PAYMENT_INFO
-
-        texto = (
-            "📱 *Pago por SMS / Saldo Móvil*\n\n"
-            f"• *Plan:* {plan['label']}\n"
-            f"• *Monto:* {plan['price']} CUP\n"
-            f"• Número:* `{info['sms_num']}`\n\n"
-            "✏️ *Adjunta la captura* del SMS o comprobante y tu `@usuario`."
-        )
         bot.send_message(uid, texto, parse_mode='Markdown')
         bot.register_next_step_handler(cq.message, process_receipt)
 
@@ -142,14 +132,12 @@ def register_payment_handlers(bot: TeleBot):
             else:
                 bot.send_message(ADMIN_GROUP_ID, caption + (f"\n📝 Notas: {entry['notes']}" if entry['notes'] else ""), parse_mode='Markdown')
 
-        # Guardar UID como autorizado
         autorizados = load("autorizados")
         usuarios = set(autorizados.get("users", []))
         usuarios.add(uid)
         autorizados["users"] = list(usuarios)
         save("autorizados", autorizados)
 
-        # Solicitar ID del grupo
         texto = (
             "✅ *Recibo recibido.*\n"
             "Ahora para completar la activación, por favor:\n\n"
