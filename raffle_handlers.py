@@ -38,11 +38,12 @@ def register_raffle_handlers(bot: TeleBot):
         grupos_aut = load('grupos_autorizados').get("grupos", [])
         usuarios_aut = load('autorizados').get("users", [])
 
+        # Verificar que el grupo esté autorizado
         if chat_id not in grupos_aut:
             return bot.reply_to(msg, "🚫 Este grupo no está autorizado para usar el bot.")
         
-        # Solo permitir que usuarios autorizados o admins gestionen
-        if user_id not in usuarios_aut and user_id not in ADMINS:
+        # Verificar que el usuario también esté autorizado o sea admin
+        if user_id not in usuarios_aut and user_id not in map(str, ADMINS):
             return bot.reply_to(msg, "⛔ No estás autorizado para usar esta función.")
 
         sorteos = load('sorteo')
@@ -73,7 +74,7 @@ def register_raffle_handlers(bot: TeleBot):
         if chat_id not in grupos_aut:
             return bot.reply_to(msg, "🚫 Este grupo no está autorizado para usar el bot.")
         
-        if user_id not in usuarios_aut and user_id not in ADMINS:
+        if user_id not in usuarios_aut and user_id not in map(str, ADMINS):
             return bot.reply_to(msg, "⛔ No estás autorizado para usar esta función.")
 
         sorteos = load('sorteo').get(chat_id, {})
