@@ -16,7 +16,7 @@ def show_owner_menu(bot: TeleBot, chat_id: int):
     kb.add(KeyboardButton("🔙 Salir"))
     bot.send_message(
         chat_id,
-        "📂 *Tus Grupos Activos:*\nSelecciona uno para gestionar:",
+        "📂 *Tus Grupos Activos*\n\nSelecciona uno para gestionar:",
         parse_mode='Markdown',
         reply_markup=kb
     )
@@ -26,6 +26,10 @@ def register_owner_handlers(bot: TeleBot):
     def handle_owner(msg):
         uid = msg.from_user.id
         text = msg.text.strip()
+
+        # Asegurar almacenamiento temporal
+        bot.user_data = getattr(bot, 'user_data', {})
+
         grupos = load('grupos')
         propios = {gid: info for gid, info in grupos.items() if info.get('activado_por') == uid}
 
@@ -72,7 +76,8 @@ def register_owner_handlers(bot: TeleBot):
             return bot.register_next_step_handler(msg, lambda m: process_schedule(m, gid))
 
         if text == "🗑️ Cancelar sorteo":
-            if not is_user_and_group_authorized(uid, bot.user_data.get(uid)):
+            gid = bot.user_data.get(uid)
+            if not gid or not is_user_and_group_authorized(uid, gid):
                 return bot.send_message(uid, "🚫 No estás autorizado para cancelar sorteos.")
             jobs = load('jobs')
             if not jobs:
@@ -99,7 +104,6 @@ def register_owner_handlers(bot: TeleBot):
             info = grupos.get(gid)
             if not info or info.get('activado_por') != uid:
                 return bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
-            bot.user_data = getattr(bot, 'user_data', {})
             bot.user_data[uid] = gid
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
@@ -128,7 +132,7 @@ def register_owner_handlers(bot: TeleBot):
 
     def is_user_and_group_authorized(user_id, group_id):
         grupos_aut = load("grupos_autorizados").get("grupos", [])
-        users_aut = load("autorizados").get("users", [])
+        users_aut = list(load("autorizados").keys())
         return str(group_id) in grupos_aut and str(user_id) in users_aut
 
     def process_schedule(msg, gid):
