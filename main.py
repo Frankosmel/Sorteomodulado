@@ -1,6 +1,7 @@
 import re
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 from config import TOKEN, ADMINS, PLANS
 from utils import ensure_files
 from storage import load
@@ -42,15 +43,19 @@ def handle_start(message):
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Si es dueño de algún grupo
+    # Si ya tiene plan activo
     if is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # Si no está validado pero tiene algún grupo activado
+    # Si ha activado al menos un grupo
     grupos = load('grupos')
     for gid, info in grupos.items():
         if info.get('activado_por') == uid:
             return show_owner_menu(bot, uid)
+
+    # Si fue añadido como autorizado por un admin
+    if uid in AUTH_USERS:
+        return show_owner_menu(bot, uid)
 
     # Mostrar planes de suscripción
     kb = InlineKeyboardMarkup(row_width=1)
