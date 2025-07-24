@@ -1,5 +1,3 @@
-# main.py
-
 import json
 from telebot import TeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -22,27 +20,22 @@ ensure_files()
 bot = TeleBot(TOKEN)
 
 # ————— URL de suscripción —————
-BOT_USERNAME = bot.get_me().username  # debe ser 'sorteos_fs_bot'
+BOT_USERNAME = bot.get_me().username
 SUBSCRIBE_URL = f"https://t.me/{BOT_USERNAME}?start=subscribe"
 
-# ————— Carga la lista de usuarios autorizados desde el JSON definido en config.FILES —————
-auth_data = load("autorizados")   # utiliza FILES["autorizados"]
+# ————— Carga la lista de usuarios autorizados —————
+auth_data = load("autorizados")
 AUTH_USERS = set(auth_data.get("users", []))
 
-# ————— Handler para cuando el bot es añadido a un grupo —————
+# ————— Handler: Bot agregado a grupo —————
 @bot.message_handler(content_types=['new_chat_members'])
 def guard_on_new_group(message):
     for new_member in message.new_chat_members:
-        # Si el bot mismo ha sido agregado al grupo
         if new_member.id == bot.get_me().id:
             actor = message.from_user
-            # Y quien lo añadió NO está autorizado
             if actor.id not in AUTH_USERS:
                 kb = InlineKeyboardMarkup()
-                kb.add(InlineKeyboardButton(
-                    "🔒 Suscríbete para activar",
-                    url=SUBSCRIBE_URL
-                ))
+                kb.add(InlineKeyboardButton("🔒 Suscríbete para activar", url=SUBSCRIBE_URL))
                 bot.send_message(
                     message.chat.id,
                     f"🚫 @{actor.username or actor.first_name}, no estás autorizado para añadirme a este grupo.\n\n"
@@ -50,35 +43,32 @@ def guard_on_new_group(message):
                     parse_mode='Markdown',
                     reply_markup=kb
                 )
-                # El bot sale inmediatamente del grupo
                 bot.leave_chat(message.chat.id)
-            # Si está autorizado, permanece sin acción adicional
             return
 
-# ————— Manejador del comando /start —————
+# ————— Comando /start —————
 @bot.message_handler(commands=['start'])
 def handle_start(message):
-    # Solo funciona en chat privado
     if message.chat.type != 'private':
         return bot.reply_to(message, "👋 Escríbeme en privado para ver tu menú.")
 
     uid = message.from_user.id
 
-    # Menú de Administrador
+    # Si es admin
     if uid in ADMINS:
         return show_admin_menu(bot, uid)
 
-    # Menú de Usuarios con plan activo
+    # Si tiene plan activo
     if is_valid(uid):
         return show_owner_menu(bot, uid)
 
-    # Menú de Usuarios que han activado grupos
+    # Si ha activado al menos un grupo
     grupos = load('grupos')
     for gid, info in grupos.items():
         if info.get('activado_por') == uid:
             return show_owner_menu(bot, uid)
 
-    # Si no está autorizado aún, muestra planes de suscripción
+    # Si no tiene plan ni grupos: mostrar planes
     kb = InlineKeyboardMarkup(row_width=1)
     for plan in PLANS:
         kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
@@ -92,20 +82,20 @@ def handle_start(message):
         reply_markup=kb
     )
 
-# ————— Registro de todos los handlers —————
+# ————— Registro de handlers —————
 register_referral_handlers(bot)
 register_raffle_handlers(bot)
 register_admin_handlers(bot)
 register_owner_handlers(bot)
-register_draw_handlers(bot)      # Handler para /draw (sorteo)
-register_group_handlers(bot)     # Otros controles de grupo
+register_draw_handlers(bot)
+register_group_handlers(bot)
 register_payment_handlers(bot)
 
-# ————— Scheduler y recordatorios —————
+# ————— Scheduler —————
 load_jobs(bot)
 start_reminders(bot)
 
-# ————— Iniciar polling —————
+# ————— Inicio del bot —————
 bot.remove_webhook()
 print("🤖 Bot modular con scheduler en ejecución…")
 bot.infinity_polling()
