@@ -7,7 +7,7 @@ from datetime import datetime
 
 def show_owner_menu(bot: TeleBot, chat_id: int):
     grupos = load('grupos')
-    propios = {gid:info for gid,info in grupos.items() if info.get('activado_por') == chat_id}
+    propios = {gid: info for gid, info in grupos.items() if info.get('activado_por') == chat_id}
     if not propios:
         return bot.send_message(chat_id, "ℹ️ No tienes grupos activos.")
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -22,50 +22,57 @@ def show_owner_menu(bot: TeleBot, chat_id: int):
     )
 
 def register_owner_handlers(bot: TeleBot):
-    @bot.message_handler(func=lambda m: m.chat.type=='private')
+    @bot.message_handler(func=lambda m: m.chat.type == 'private')
     def handle_owner(msg):
-        uid    = msg.from_user.id
-        text   = msg.text.strip()
+        uid = msg.from_user.id
+        text = msg.text.strip()
         grupos = load('grupos')
-        propios = {gid:info for gid,info in grupos.items() if info.get('activado_por') == uid}
+        propios = {gid: info for gid, info in grupos.items() if info.get('activado_por') == uid}
 
         # 🔙 Salir
         if text == "🔙 Salir":
+            bot.user_data.pop(uid, None)
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
-        # 🎲 Gestionar Sorteos (desde menú general)
+        # Volver desde submenús
+        if text == "🔙 Volver":
+            return show_owner_menu(bot, uid)
+
+        # 🎲 Gestión desde botón principal
         if text == "🎲 Gestionar Sorteos":
+            gid = bot.user_data.get(uid)
+            if not gid:
+                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
             kb.add(KeyboardButton("🗑️ Cancelar sorteo"), KeyboardButton("🔙 Volver"))
             return bot.send_message(
                 uid,
-                "🎲 *Gestión de Sorteos*\n\nElige una opción:",
+                f"🎲 *Gestión de Sorteos para el grupo {gid}*\nSelecciona una opción:",
                 parse_mode='Markdown',
                 reply_markup=kb
             )
 
         # 🎯 Sortear ahora
         if text == "🎯 Sortear ahora":
-            if not propios:
-                return bot.reply_to(msg, "ℹ️ No tienes grupos para sortear.")
-            bot.send_message(uid,
-                "✏️ Envía: `<chat_id>`\n_Se elegirá un ganador aleatorio._",
-                parse_mode='Markdown'
-            )
-            return bot.register_next_step_handler(msg, process_draw_now)
+            gid = bot.user_data.get(uid)
+            if not gid:
+                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
+            _perform_draw(gid, bot, name="Sorteo Rápido")
+            return
 
         # ⏰ Agendar sorteo
         if text == "⏰ Agendar sorteo":
-            if not propios:
-                return bot.reply_to(msg, "ℹ️ No tienes grupos para programar.")
+            gid = bot.user_data.get(uid)
+            if not gid:
+                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
             bot.send_message(uid,
                 "⏰ *Agendar Sorteo*\n"
-                "✏️ Envía: `<chat_id> YYYY-MM-DD_HH:MM`\n"
-                "_Ejemplo_: `-1001234567890 2025-07-25_15:30`",
+                "✏️ Envía la fecha y hora en formato: `YYYY-MM-DD_HH:MM`\n"
+                "_Ejemplo_: `2025-07-25_15:30`",
                 parse_mode='Markdown'
             )
-            return bot.register_next_step_handler(msg, process_schedule)
+            return bot.register_next_step_handler(msg, lambda m: process_schedule(m, gid))
 
         # 🗑️ Cancelar sorteo
         if text == "🗑️ Cancelar sorteo":
@@ -88,20 +95,20 @@ def register_owner_handlers(bot: TeleBot):
         if text.startswith("Cancelar "):
             jid = text.split(maxsplit=1)[1]
             cancel_scheduled_raffle(bot, jid)
-            return bot.send_message(uid, f"🗑️ Sorteo `{jid}` eliminado.", reply_markup=ReplyKeyboardRemove())
+            return bot.send_message(uid, f"🗑️ Sorteo `{jid}` eliminado.", parse_mode='Markdown', reply_markup=ReplyKeyboardRemove())
 
-        # 🔧 Gestión de grupo individual
+        # Gestión por grupo
         if text.startswith("Gestionar "):
             gid = text.split()[1]
             info = grupos.get(gid)
             if not info or info.get('activado_por') != uid:
                 return bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
+            bot.user_data = getattr(bot, 'user_data', {})
+            bot.user_data[uid] = gid
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
             kb.add(KeyboardButton("🗑️ Cancelar sorteo"), KeyboardButton("🌐 Cambiar zona horaria"))
             kb.add(KeyboardButton("🔙 Volver"))
-            bot.user_data = getattr(bot, 'user_data', {})
-            bot.user_data[uid] = gid
             return bot.send_message(
                 uid,
                 f"🎲 *Gestión de Sorteos para el grupo {gid}*\nSelecciona una opción:",
@@ -111,24 +118,21 @@ def register_owner_handlers(bot: TeleBot):
 
         # 🌐 Cambiar zona horaria
         if text == "🌐 Cambiar zona horaria":
+            gid = bot.user_data.get(uid)
+            if not gid:
+                return bot.send_message(uid, "⚠️ Primero selecciona un grupo para gestionar.")
             bot.send_message(uid,
                 "🌐 *Cambiar Zona Horaria*\n"
-                "✏️ Envía: `<chat_id>,<Zona>`\n"
-                "_Ejemplo_: `-1001234567890,Europe/Madrid`",
+                "✏️ Envía la nueva zona en formato: `Continent/City`\n"
+                "_Ejemplo_: `America/Havana`",
                 parse_mode='Markdown'
             )
-            return bot.register_next_step_handler(msg, cambiar_zona)
+            return bot.register_next_step_handler(msg, lambda m: cambiar_zona(m, gid))
 
     # — Funciones auxiliares —
-    def process_schedule(msg):
+    def process_schedule(msg, gid):
         uid = msg.from_user.id
-        partes = msg.text.split()
-        if len(partes) != 2:
-            return bot.reply_to(msg,
-                "❌ Formato inválido.\nUso: `<chat_id> YYYY-MM-DD_HH:MM`",
-                parse_mode='Markdown'
-            )
-        chat_id, text = partes
+        text = msg.text.strip()
         try:
             dt_naive = datetime.strptime(text, "%Y-%m-%d_%H:%M")
         except ValueError:
@@ -136,13 +140,13 @@ def register_owner_handlers(bot: TeleBot):
                 "❌ Fecha u hora no válidas.\nFormato: `YYYY-MM-DD_HH:MM`",
                 parse_mode='Markdown'
             )
-        grp = load('grupos').get(chat_id,{})
-        tzname = grp.get('timezone','UTC')
+        gr = load('grupos').get(gid, {})
+        tzname = gr.get('timezone', 'UTC')
         try:
             tz = ZoneInfo(tzname)
         except:
             return bot.send_message(uid,
-                f"❌ Zona `{tzname}` inválida.\nUsa /start→Gestionar Sorteos→🌐 Cambiar zona.",
+                f"❌ Zona `{tzname}` inválida.\nUsa 🌐 Cambiar zona.",
                 parse_mode='Markdown'
             )
         run_at = dt_naive.replace(tzinfo=tz)
@@ -150,37 +154,38 @@ def register_owner_handlers(bot: TeleBot):
             "✏️ *Ahora envía un nombre* para identificar este sorteo:",
             parse_mode='Markdown'
         )
-        return bot.register_next_step_handler(msg, lambda m: _finalize_schedule(m, chat_id, run_at))
+        return bot.register_next_step_handler(msg, lambda m: _finalize_schedule(m, gid, run_at))
 
-    def _finalize_schedule(msg, chat_id, run_at):
+    def _finalize_schedule(msg, gid, run_at):
         uid = msg.from_user.id
         name = msg.text.strip()
-        schedule_raffle(bot, chat_id, run_at, name)
+        schedule_raffle(bot, gid, run_at, name)
         bot.send_message(uid,
             f"✅ Sorteo «{name}» programado para *{run_at.strftime('%Y-%m-%d %H:%M')}*.",
             parse_mode='Markdown',
             reply_markup=ReplyKeyboardRemove()
         )
 
-    def process_draw_now(msg):
-        chat_id = msg.text.strip()
-        _perform_draw(chat_id, bot, name="Sorteo Rápido")
-
-    def cambiar_zona(msg):
+    def cambiar_zona(msg, gid):
+        tz = msg.text.strip()
         try:
-            chat_id, tz = map(str.strip, msg.text.split(','))
             ZoneInfo(tz)
             gr = load('grupos')
-            gr[chat_id]['timezone'] = tz
-            save('grupos', gr)
+            if gid in gr:
+                gr[gid]['timezone'] = tz
+                save('grupos', gr)
+                bot.send_message(msg.from_user.id,
+                    f"✅ Zona de `{gid}` actualizada a *{tz}*.",
+                    parse_mode='Markdown',
+                    reply_markup=ReplyKeyboardRemove()
+                )
+        except:
             bot.send_message(msg.from_user.id,
-                f"✅ Zona de `{chat_id}` actualizada a *{tz}*.",
+                "❌ Zona inválida.\nUsa el formato correcto, ej: `America/Havana`",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
             )
-        except:
-            bot.send_message(msg.from_user.id,
-                "❌ Formato o zona inválida.\nUso: `<chat_id>,<Zona>`",
-                parse_mode='Markdown',
-                reply_markup=ReplyKeyboardRemove()
-        )
+
+    def _perform_draw(gid, bot, name="Sorteo"):
+        from draw_handlers import realizar_sorteo
+        realizar_sorteo(bot, gid, name)
