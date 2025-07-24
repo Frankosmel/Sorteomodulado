@@ -1,5 +1,3 @@
-# owner_handlers.py
-
 from telebot import TeleBot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from storage import load, save
@@ -8,13 +6,17 @@ from zoneinfo import ZoneInfo
 from datetime import datetime
 
 def show_owner_menu(bot: TeleBot, chat_id: int):
-    """Envía el menú principal de owner a `chat_id`."""
+    grupos = load('grupos')
+    propios = {gid:info for gid,info in grupos.items() if info.get('activado_por') == chat_id}
+    if not propios:
+        return bot.send_message(chat_id, "ℹ️ No tienes grupos activos.")
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("👥 Mis Grupos"), KeyboardButton("🎲 Gestionar Sorteos"))
+    for gid in propios:
+        kb.add(KeyboardButton(f"Gestionar {gid}"))
     kb.add(KeyboardButton("🔙 Salir"))
     bot.send_message(
         chat_id,
-        "👤 *Panel de Owner*\n\nSelecciona una opción:",
+        "📂 *Tus Grupos Activos:*\nSelecciona uno para gestionar:",
         parse_mode='Markdown',
         reply_markup=kb
     )
@@ -31,22 +33,7 @@ def register_owner_handlers(bot: TeleBot):
         if text == "🔙 Salir":
             return bot.send_message(uid, "✅ Menú cerrado.", reply_markup=ReplyKeyboardRemove())
 
-        # 👥 Mis Grupos
-        if text == "👥 Mis Grupos":
-            if not propios:
-                return bot.reply_to(msg, "ℹ️ No tienes ningún grupo activado.")
-            kb = ReplyKeyboardMarkup(resize_keyboard=True)
-            for gid in propios:
-                kb.add(KeyboardButton(f"Gestionar {gid}"))
-            kb.add(KeyboardButton("🔙 Salir"))
-            return bot.send_message(
-                uid,
-                "📂 *Tus Grupos Activos:*\nSelecciona uno para gestionar:",
-                parse_mode='Markdown',
-                reply_markup=kb
-            )
-
-        # 🎲 Gestionar Sorteos
+        # 🎲 Gestionar Sorteos (desde menú general)
         if text == "🎲 Gestionar Sorteos":
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
             kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
@@ -110,52 +97,27 @@ def register_owner_handlers(bot: TeleBot):
             if not info or info.get('activado_por') != uid:
                 return bot.reply_to(msg, "⚠️ No puedes gestionar ese grupo.")
             kb = ReplyKeyboardMarkup(resize_keyboard=True)
-            kb.add(KeyboardButton("👥 Ver participantes"), KeyboardButton("🏆 Ver top invitadores"))
-            kb.add(KeyboardButton("🎲 Gestionar Sorteos"), KeyboardButton("🌐 Cambiar zona horaria"))
+            kb.add(KeyboardButton("🎯 Sortear ahora"), KeyboardButton("⏰ Agendar sorteo"))
+            kb.add(KeyboardButton("🗑️ Cancelar sorteo"), KeyboardButton("🌐 Cambiar zona horaria"))
             kb.add(KeyboardButton("🔙 Volver"))
             bot.user_data = getattr(bot, 'user_data', {})
             bot.user_data[uid] = gid
             return bot.send_message(
                 uid,
-                f"⚙️ *Gestión Grupo {gid}*\nSelecciona una opción:",
+                f"🎲 *Gestión de Sorteos para el grupo {gid}*\nSelecciona una opción:",
                 parse_mode='Markdown',
                 reply_markup=kb
             )
 
-        # Contexto de grupo
-        gid = getattr(bot, 'user_data', {}).get(uid)
-        if gid:
-            # 👥 Ver participantes
-            if text == "👥 Ver participantes":
-                partes = load('participantes').get(gid, {})
-                if not partes:
-                    return bot.send_message(uid, "ℹ️ No hay participantes.")
-                msg_text = "👥 *Participantes:*\n"
-                for uid2, info in partes.items():
-                    mention = f"@{info['username']}" if info.get('username') else info['nombre']
-                    msg_text += f"• {mention}\n"
-                return bot.send_message(uid, msg_text, parse_mode='Markdown')
-
-            # 🏆 Ver top invitadores
-            if text == "🏆 Ver top invitadores":
-                invs = load('invitaciones').get(gid, {})
-                if not invs:
-                    return bot.send_message(uid, "📉 No hay invitados.")
-                top = sorted(invs.items(), key=lambda x: x[1], reverse=True)[:10]
-                msg_text = "🏆 *Top Invitadores:*\n"
-                for i,(u,c) in enumerate(top,1):
-                    msg_text += f"{i}. `{u}` → {c}\n"
-                return bot.send_message(uid, msg_text, parse_mode='Markdown')
-
-            # 🌐 Cambiar zona horaria
-            if text == "🌐 Cambiar zona horaria":
-                bot.send_message(uid,
-                    "🌐 *Cambiar Zona Horaria*\n"
-                    "✏️ Envía: `<chat_id>,<Zona>`\n"
-                    "_Ejemplo_: `-1001234567890,Europe/Madrid`",
-                    parse_mode='Markdown'
-                )
-                return bot.register_next_step_handler(msg, cambiar_zona)
+        # 🌐 Cambiar zona horaria
+        if text == "🌐 Cambiar zona horaria":
+            bot.send_message(uid,
+                "🌐 *Cambiar Zona Horaria*\n"
+                "✏️ Envía: `<chat_id>,<Zona>`\n"
+                "_Ejemplo_: `-1001234567890,Europe/Madrid`",
+                parse_mode='Markdown'
+            )
+            return bot.register_next_step_handler(msg, cambiar_zona)
 
     # — Funciones auxiliares —
     def process_schedule(msg):
@@ -179,12 +141,11 @@ def register_owner_handlers(bot: TeleBot):
         try:
             tz = ZoneInfo(tzname)
         except:
-            return bot.reply_to(msg,
+            return bot.send_message(uid,
                 f"❌ Zona `{tzname}` inválida.\nUsa /start→Gestionar Sorteos→🌐 Cambiar zona.",
                 parse_mode='Markdown'
             )
         run_at = dt_naive.replace(tzinfo=tz)
-        # Pedir nombre
         bot.send_message(uid,
             "✏️ *Ahora envía un nombre* para identificar este sorteo:",
             parse_mode='Markdown'
@@ -222,4 +183,4 @@ def register_owner_handlers(bot: TeleBot):
                 "❌ Formato o zona inválida.\nUso: `<chat_id>,<Zona>`",
                 parse_mode='Markdown',
                 reply_markup=ReplyKeyboardRemove()
-            )
+        )
