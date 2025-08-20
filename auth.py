@@ -16,23 +16,29 @@ def is_valid(user_id: int) -> bool:
         return False
     return datetime.utcnow() <= exp
 
-def add_authorized(user_id: int, username: str, plan_key: str):
-    """Registra o renueva un usuario con plan y vencimiento según configuración."""
+def _plan_meta(plan_key: str):
     plan = next((p for p in PLANS if p['key'] == plan_key), None)
     if not plan:
         raise ValueError(f"Plan desconocido: {plan_key}")
+    return plan
 
+def add_authorized(user_id: int, username: str, plan_key: str):
+    """Registra/renueva un usuario con plan; guarda precio y cupo."""
+    plan = _plan_meta(plan_key)
     duration = plan.get('duration_days', 30)
     now = datetime.utcnow()
     exp = now + timedelta(days=duration)
 
     auth = load('autorizados')
     auth[str(user_id)] = {
-        'nombre':    username,
-        'username':  username,
-        'plan':      plan_key,
-        'pago':      now.isoformat(),
-        'vence':     exp.isoformat()
+        'nombre':     username,
+        'username':   username,
+        'plan':       plan_key,
+        'plan_label': plan['label'],
+        'price_usd':  plan.get('price_usd', 0.0),
+        'max_groups': plan.get('max_groups', 1),
+        'pago':       now.isoformat(),
+        'vence':      exp.isoformat()
     }
     save('autorizados', auth)
 
@@ -50,9 +56,11 @@ def list_authorized() -> dict:
     return load('autorizados')
 
 def get_info(user_id: int) -> dict | None:
+    """Devuelve info de un autorizado o None."""
     return load('autorizados').get(str(user_id))
 
 def remaining_days(user_id: int) -> int:
+    """Días restantes de suscripción (0 si vencido)."""
     info = get_info(user_id)
     if not info:
         return -1
@@ -73,13 +81,7 @@ def register_group(chat_id: int, added_by: int):
         raise ValueError("Usuario no autorizado")
 
     plan_key = info.get('plan')
-    limits = {
-        'plan_1m1g': 1,
-        'plan_1m2g': 2,
-        'plan_1m3g': 3,
-        'plan_3m3g': 3
-    }
-    max_grupos = limits.get(plan_key, 1)
+    max_grupos = info.get('max_groups', 1)  # ahora proviene del plan guardado
 
     grupos = load('grupos')
     actuales = sum(1 for g in grupos.values() if g.get('activado_por') == added_by)
