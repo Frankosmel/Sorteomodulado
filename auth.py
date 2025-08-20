@@ -10,22 +10,18 @@ def is_valid(user_id: int) -> bool:
     info = auth.get(str(user_id))
     if not info:
         return False
-    exp = datetime.fromisoformat(info['vence'])
+    try:
+        exp = datetime.fromisoformat(info['vence'])
+    except Exception:
+        return False
     return datetime.utcnow() <= exp
 
 def add_authorized(user_id: int, username: str, plan_key: str):
-    """
-    Registra un nuevo usuario autorizado.
-    - user_id: ID de Telegram
-    - username: @usuario
-    - plan_key: clave del plan, e.g. 'plan_1m1g'
-    """
-    # Buscamos el plan en la configuración
+    """Registra o renueva un usuario con plan y vencimiento según configuración."""
     plan = next((p for p in PLANS if p['key'] == plan_key), None)
     if not plan:
         raise ValueError(f"Plan desconocido: {plan_key}")
 
-    # Determinamos duración en días
     duration = plan.get('duration_days', 30)
     now = datetime.utcnow()
     exp = now + timedelta(days=duration)
@@ -53,6 +49,19 @@ def list_authorized() -> dict:
     """Devuelve el dict completo de autorizados."""
     return load('autorizados')
 
+def get_info(user_id: int) -> dict | None:
+    return load('autorizados').get(str(user_id))
+
+def remaining_days(user_id: int) -> int:
+    info = get_info(user_id)
+    if not info:
+        return -1
+    try:
+        delta = datetime.fromisoformat(info['vence']) - datetime.utcnow()
+        return max(delta.days, 0)
+    except Exception:
+        return -1
+
 def register_group(chat_id: int, added_by: int):
     """
     Registra el grupo si el usuario aún no supera su cuota.
@@ -64,7 +73,6 @@ def register_group(chat_id: int, added_by: int):
         raise ValueError("Usuario no autorizado")
 
     plan_key = info.get('plan')
-    # límites según plan_key
     limits = {
         'plan_1m1g': 1,
         'plan_1m2g': 2,
@@ -78,7 +86,6 @@ def register_group(chat_id: int, added_by: int):
     if actuales >= max_grupos:
         raise ValueError("Límite de grupos alcanzado")
 
-    # registrar
     grupos.setdefault(str(chat_id), {
         'activado_por': added_by,
         'creado':       datetime.utcnow().date().isoformat()
