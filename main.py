@@ -1,99 +1,121 @@
-import re
+# main.py
+
 from telebot import TeleBot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import TOKEN, ADMINS, PLANS
-from utils import ensure_files
-from storage import load
-from auth import is_valid
-from owner_handlers import show_owner_menu, register_owner_handlers
-from admin_handlers import show_admin_menu, register_admin_handlers
-from raffle_handlers import register_raffle_handlers
-from draw_handlers import register_draw_handlers
-from group_handlers import register_group_handlers
-from payments_handlers import register_payment_handlers
-from scheduler import load_jobs, start_reminders
+from telebot.types import Message, ChatMemberUpdated
+from config import TOKEN, ADMINS
+from storage import ensure_files
+from auth import is_valid, register_group, get_info, remaining_days
+from admin_handlers import register_admin_handlers, show_admin_menu
+from datetime import datetime
 
-# ————— Inicialización de archivos y bot —————
-ensure_files()
-bot = TeleBot(TOKEN)
+bot = TeleBot(TOKEN, parse_mode="Markdown")
 
-# ————— Función para escapar caracteres conflictivos en Markdown —————
-def escape_md(text):
-    return re.sub(r'([_*()~`>#+=|{}.!-])', r'\\\1', text)
+# --- Cuando cambian los permisos del bot en un chat (agregado a un grupo) ---
+@bot.my_chat_member_handler(func=lambda upd: True)
+def on_my_chat_member(upd: ChatMemberUpdated):
+    try:
+        new_status = upd.new_chat_member.status  # 'member', 'administrator', etc.
+        chat = upd.chat
+        actor = upd.from_user  # quien lo agregó
+        chat_id = chat.id
 
-# ————— URL de suscripción —————
-BOT_USERNAME = bot.get_me().username
-SUBSCRIBE_URL = f"https://t.me/{BOT_USERNAME}?start=subscribe"
+        if new_status not in ("member", "administrator"):
+            return
 
-# ————— Carga de usuarios autorizados y grupos autorizados —————
-auth_data = load("autorizados")
-AUTH_USERS = set(auth_data.get("users", []))
+        # Solo quien paga (autorizado vigente) puede activar
+        if not is_valid(actor.id):
+            try:
+                bot.send_message(actor.id, "⛔ No estás autorizado para activar el bot en grupos.")
+            except Exception:
+                pass
+            bot.leave_chat(chat_id)
+            return
 
-grupos_aut_data = load("grupos_autorizados")
-AUTH_GROUPS = set(grupos_aut_data.get("groups", []))
-
-# ————— Manejador del comando /start —————
-@bot.message_handler(commands=['start'])
-def handle_start(message):
-    if message.chat.type != 'private':
-        return bot.reply_to(message, "👋 Escríbeme en privado para ver tu menú.")
-
-    uid = message.from_user.id
-
-    # Si es administrador
-    if uid in ADMINS:
-        return show_admin_menu(bot, uid)
-
-    # Si es dueño de algún grupo autorizado o usuario autorizado
-    if uid in AUTH_USERS or is_valid(uid):
-        return show_owner_menu(bot, uid)
-
-    # Si no está validado pero activó algún grupo
-    grupos = load('grupos')
-    for gid, info in grupos.items():
-        if info.get('activado_por') == uid:
-            return show_owner_menu(bot, uid)
-
-    # Mostrar planes de suscripción
-    kb = InlineKeyboardMarkup(row_width=1)
-    for plan in PLANS:
-        kb.add(InlineKeyboardButton(plan['label'], callback_data=plan['key']))
-    kb.add(InlineKeyboardButton("💬 Soporte", url="https://t.me/franosmel"))
-
-    bot.send_message(
-        uid,
-        "📦 *Planes de Suscripción*\n\n"
-        "Elige el que mejor se adapte a tus necesidades para activar el bot en tus grupos:",
-        parse_mode='Markdown',
-        reply_markup=kb
-    )
-
-# ————— Manejador general para mensajes en grupos no autorizados —————
-@bot.message_handler(func=lambda m: m.chat.type in ['group', 'supergroup'])
-def handle_group_message(message):
-    if str(message.chat.id) not in AUTH_GROUPS:
+        # Registrar grupo (aplica límites según plan)
         try:
-            bot.reply_to(
-                message,
-                "⚠️ Este grupo no está autorizado para utilizar el bot.\n\n"
-                "Contacta con el administrador para activarlo. Solo se permiten grupos autorizados."
-            )
+            register_group(chat_id, actor.id)
+        except ValueError as e:
+            try:
+                bot.send_message(actor.id, f"⚠️ No se pudo activar en este grupo: {str(e)}")
+            except Exception:
+                pass
+            bot.leave_chat(chat_id)
+            return
+
+        # Confirmaciones
+        try:
+            bot.send_message(actor.id, f"✅ Bot activado en el grupo *{chat.title or chat_id}*.")
+        except Exception:
+            pass
+        try:
+            bot.send_message(chat_id, "🤖 Bot activado correctamente. Gracias.")
         except Exception:
             pass
 
-# ————— Registro de todos los handlers —————
-register_raffle_handlers(bot)
-register_admin_handlers(bot)
-register_owner_handlers(bot)
-register_draw_handlers(bot)
-register_group_handlers(bot)
-register_payment_handlers(bot)
+    except Exception as ex:
+        print("[my_chat_member error]", ex)
 
-# ————— Scheduler y recordatorios —————
-load_jobs(bot)
-start_reminders(bot)
+# --- /activar dentro del grupo (por si el bot ya estaba) ---
+@bot.message_handler(commands=["activar"])
+def cmd_activar(msg: Message):
+    if msg.chat.type not in ("group", "supergroup"):
+        return bot.reply_to(msg, "Este comando se usa dentro de grupos.")
 
-# ————— Iniciar polling —————
-bot.remove_webhook()
-print("🤖 Bot modular con scheduler en ejecución…")
-bot.infinity_polling()
+    user_id = msg.from_user.id
+    chat_id = msg.chat.id
+
+    if not is_valid(user_id):
+        return bot.reply_to(msg, "⛔ No estás autorizado para activar el bot en grupos.")
+
+    try:
+        register_group(chat_id, user_id)
+    except ValueError as e:
+        return bot.reply_to(msg, f"⚠️ No se pudo activar en este grupo: {str(e)}")
+
+    return bot.reply_to(msg, "✅ Grupo activado correctamente para tu suscripción.")
+
+# --- /start y /status en privado ---
+@bot.message_handler(commands=["start"])
+def cmd_start(msg: Message):
+    if is_valid(msg.from_user.id):
+        info = get_info(msg.from_user.id)
+        dias = remaining_days(msg.from_user.id)
+        bot.reply_to(msg,
+            f"✅ Ya estás autorizado.\n"
+            f"Plan: *{info.get('plan','—')}*\n"
+            f"Vence: *{info.get('vence','—')}*\n"
+            f"Días restantes: *{dias}*"
+        )
+    else:
+        bot.reply_to(msg,
+            "👋 Hola. Aún no estás autorizado para usar el bot.\n"
+            "Contacta a un administrador para adquirir un plan y activar tu acceso."
+        )
+
+@bot.message_handler(commands=["status"])
+def cmd_status(msg: Message):
+    if is_valid(msg.from_user.id):
+        info = get_info(msg.from_user.id)
+        dias = remaining_days(msg.from_user.id)
+        bot.reply_to(msg,
+            f"📊 *Estado de tu suscripción*\n\n"
+            f"Plan: *{info.get('plan','—')}*\n"
+            f"Vence: *{info.get('vence','—')}*\n"
+            f"Días restantes: *{dias}*"
+        )
+    else:
+        bot.reply_to(msg, "ℹ️ No tienes una suscripción activa.")
+
+@bot.message_handler(commands=["admin"])
+def cmd_admin(msg: Message):
+    if msg.chat.type != 'private' or msg.from_user.id not in ADMINS:
+        return bot.reply_to(msg, "⛔ *Acceso denegado.* Usa /admin en privado.")
+    show_admin_menu(bot, msg.chat.id)
+
+def main():
+    ensure_files()
+    register_admin_handlers(bot)
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+
+if __name__ == "__main__":
+    main()
