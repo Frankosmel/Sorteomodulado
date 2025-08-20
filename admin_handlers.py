@@ -117,7 +117,7 @@ def register_admin_handlers(bot: TeleBot):
                 return bot.send_message(uid, "ℹ️ *No hay grupos registrados.*", parse_mode='Markdown')
 
             header = "🗂 *Grupos donde está el bot*\n"
-            header += "_(Muestra si el dueño sigue autorizado o no, IDs y enlaces disponibles)_\n\n"
+            header += "_(Estado del dueño: Autorizado/No autorizado, IDs y enlaces)_\n\n"
 
             lines = []
             for chat_id_str, ginfo in grupos.items():
@@ -140,7 +140,6 @@ def register_admin_handlers(bot: TeleBot):
                     if username:  # grupos/canales públicos
                         enlace = f"https://t.me/{username}"
                     else:
-                        # Como fallback, intentar exportar un enlace (requiere permisos de admin del bot)
                         try:
                             enlace = bot.export_chat_invite_link(chat_id)
                         except Exception:
@@ -148,24 +147,17 @@ def register_admin_handlers(bot: TeleBot):
                 except Exception:
                     pass
 
-                # Construir línea (Markdown: mostramos URL en claro para que sea clicable)
                 linea = (
                     f"• *{_escape_md(title)}* "
                     f"(`{chat_id}`)\n"
                     f"  Estado: *{estado}* — Activado por: `{activador}` — Desde: {creado}\n"
                 )
-                if enlace:
-                    linea += f"  Enlace: {enlace}\n"
-                else:
-                    linea += f"  Enlace: —\n"
+                linea += f"  Enlace: {enlace if enlace else '—'}\n"
                 lines.append(linea)
 
-            # Telegram limita mensajes largos; si son muchas líneas, troceamos
-            salida = header
-            for bloque in _chunk_lines(lines, max_chars=3500):
-                bot.send_message(uid, salida + bloque, parse_mode='Markdown')
-                salida = ""  # solo encabezado en el primer bloque
-
+            # Telegram limita mensajes largos; trocear si hace falta
+            for bloque in _chunk_lines(lines, max_chars=3500, header=header):
+                bot.send_message(uid, bloque, parse_mode='Markdown')
             return
 
         if text == "📤 Mensajes":
@@ -215,10 +207,9 @@ def _build_plans_keyboard():
     kb.row("Cancelar")
     return kb
 
-def _chunk_lines(lines, max_chars=3500):
-    """Une líneas en bloques que no excedan max_chars (para no romper el límite de Telegram)."""
-    bloques = []
-    actual = ""
+def _chunk_lines(lines, max_chars=3500, header=""):
+    """Une líneas en bloques <= max_chars (añade header al primer bloque)."""
+    bloques, actual = [], header
     for ln in lines:
         if len(actual) + len(ln) > max_chars:
             bloques.append(actual)
@@ -339,4 +330,4 @@ def send_to_groups(msg, bot: TeleBot):
         msg.from_user.id,
         "✅ Mensaje reenviado a todos los grupos.",
         reply_markup=ReplyKeyboardRemove()
-            )
+                )
